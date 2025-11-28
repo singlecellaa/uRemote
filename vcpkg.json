@@ -1,0 +1,42 @@
+{
+  "name": "uremote",
+  "version": "0.0.0",
+  "dependencies": [
+    "glfw3",
+    "glew",
+    {
+      "name": "imgui",
+      "features": ["glfw-binding", "opengl3-binding"]
+    },
+    "boost-asio",
+    "openssl",
+    "ffmpeg"
+  ],
+  "overrides": [
+    {
+      "name": "imgui",
+      "version": "1.91.9"
+    },
+    {
+      "name": "boost-asio",
+      "version": "1.89.0"
+    },
+    {
+      "name": "openssl",
+      "version": "3.6.0#3"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "7.1.2"
+    },
+    {
+      "name": "glfw3",
+      "version": "3.4"
+    },
+    {
+      "name": "glew",
+      "version": "2.2.0#6"
+    }
+  ],
+  "builtin-baseline": "be563dfee81e88f9f6cf68839dff5b671b5cfb37"
+}

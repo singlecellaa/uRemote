@@ -10,22 +10,22 @@
 
 vcpkg and cmake in windows  
     准备cmake (v3.11左右) 和 visual studio 2022  
-    ``cd D:/SDK  
+    `cd D:/SDK  
     git clone https://github.com/microsoft/vcpkg.git  
     cd vcpkg  
-    bootstrap-vcpkg.bat``  
+    bootstrap-vcpkg.bat`  
     添加环境变量VCPKG_ROOT值为D:/SDK/vcpkg  
-    ``cd path/to/your/workdir  
+    `cd path/to/your/workdir  
     git clone git@github.com:singlecellaa/uRemote.git  
     cd uRemote  
     vcpkg install --x-install-root=$VCPKG  
     cmake -B build  
-    cd build``  
+    cd build`  
     双击 .sln 文件，visual studio中打开项目  
     在左侧solution explorer，在ALL_BUILD,uRemote,ZERO_CHECK中，右键uRemote, 点击 "Set as Startup Project"  
 
 vcpkg and cmake in linux  
-    ``sudo apt-get install curl zip unzip tar              #for bootstrap-vcpkg.sh  
+    `sudo apt-get install curl zip unzip tar              #for bootstrap-vcpkg.sh  
     sudo apt install ninja-build nasm                    #for vcpkg install --x-install-root=$VCPKG  
     sudo apt install libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev pkg-config    #for vcpkg install --x-install-root=$VCPKG  
     cd ~  
@@ -46,4 +46,4 @@ vcpkg and cmake in linux
     vcpkg install --x-install-root=$VCPKG  
     cmake -B build                #generate Makefile  
     cd build  
-    make``  
+    make`  

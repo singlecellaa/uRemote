@@ -3,7 +3,7 @@
 #
 
 # Add source to this project's executable.
-add_executable (uRemote "uRemote.cpp" "uRemote.h")
+add_executable (uRemote "uRemote.cpp" "uRemote.h" "network.h" "network.cpp")
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET uRemote PROPERTY CXX_STANDARD 20)

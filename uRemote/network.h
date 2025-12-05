@@ -1,5 +1,4 @@
 #pragma once
-
 #include <boost/asio.hpp>
 #include <thread>
 #include <memory>
@@ -8,6 +7,7 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <iostream>
 
 using namespace boost::asio;
 using boost::asio::ip::tcp;
@@ -37,110 +37,47 @@ using ConnectionCallback = std::function<void(ConnectionState, const std::string
 using MessageCallback = std::function<void(const NetworkMessage&)>;
 using ErrorCallback = std::function<void(const std::string&)>;
 
-// Base connection class for common functionality
-class BaseConnection : public std::enable_shared_from_this<BaseConnection> {
-protected:
-    boost::asio::io_context& m_io_context;
-    tcp::socket m_socket;
-    ConnectionState m_state;
-    std::thread m_io_thread;
-    mutable std::mutex m_state_mutex;
 
-    // Message queue for thread-safe communication
-    std::queue<NetworkMessage> m_message_queue;
-    std::mutex m_queue_mutex;
-    std::condition_variable m_queue_cv;
+class NetworkManager {
+private:
+    std::shared_ptr<Server> m_server;
+    std::shared_ptr<Client> m_client;
+    std::unique_ptr<boost::asio::io_context> m_server_io_context;
+    std::unique_ptr<boost::asio::io_context> m_client_io_context;
 
-    // Callbacks
-    ConnectionCallback m_connection_callback;
-    MessageCallback m_message_callback;
-    ErrorCallback m_error_callback;
+    // Thread-safe message queue
+    std::vector<std::string> m_received_messages;
+    std::mutex m_messages_mutex;
 
-    // Buffer for reading
-    std::array<uint8_t, 8192> m_read_buffer;
+    // Connection status
+    std::atomic<ConnectionState> m_connection_state{ ConnectionState::DISCONNECTED };
+    std::string m_connection_info;
+    mutable std::mutex m_info_mutex;
 
 public:
-    BaseConnection(boost::asio::io_context& io_context);
-    virtual ~BaseConnection();
+    NetworkManager() = default;
 
-    // Common interface
-    virtual void start() = 0;
-    virtual void stop();
-    virtual void send(const NetworkMessage& message);
-    virtual void send(const std::string& message);
+    ~NetworkManager();
 
-    // Callback setters
-    void setConnectionCallback(ConnectionCallback callback);
-    void setMessageCallback(MessageCallback callback);
-    void setErrorCallback(ErrorCallback callback);
+    void startServer(const std::string& port);
 
-    // State management
-    ConnectionState getState() const;
+    void startClient(const std::string& host, const std::string& port);
+
+    void stopAll();
+    void sendMessage(const std::string& message);
+    std::vector<std::string> getMessages();
+    void clearMessages();
+    ConnectionState getConnectionState() const;
+    std::string getConnectionInfo() const;
     bool isConnected() const;
-
-protected:
-    void setState(ConnectionState new_state, const std::string& info = "");
-    void startReading();
-    void handleRead(const boost::system::error_code& error, size_t bytes_transferred);
-    void handleWrite(const boost::system::error_code& error, size_t bytes_transferred);
-
-    // Virtual methods for extension points
-    virtual void onConnected() {}
-    virtual void onDisconnected() {}
-    virtual void onMessageReceived(const NetworkMessage& message) {}
-    virtual void onError(const std::string& error_message) {}
-
-    // Message processing (can be overridden for encryption, etc.)
-    virtual NetworkMessage preprocessSend(NetworkMessage message) { return message; }
-    virtual NetworkMessage preprocessReceive(NetworkMessage message) { return message; }
-};
-
-// Server class
-class Server : public BaseConnection {
-private:
-    tcp::acceptor m_acceptor;
-    std::string m_port;
-
-public:
-    Server(boost::asio::io_context& io_context, const std::string& port);
-    ~Server();
-
-    void start() override;
-    void stop() override;
+    bool isServerMode() const;
+    bool isClientMode() const;
 
 private:
-    void startAccept();
-    void handleAccept(const boost::system::error_code& error);
-
-    // Override base callbacks
-    void onConnected() override;
-    void onDisconnected() override;
-    void onMessageReceived(const NetworkMessage& message) override;
-    void onError(const std::string& error_message) override;
-};
-
-// Client class
-class Client : public BaseConnection {
-private:
-    std::string m_host;
-    std::string m_port;
-    tcp::resolver m_resolver;
-
-public:
-    Client(boost::asio::io_context& io_context, const std::string& host, const std::string& port);
-    ~Client();
-
-    void start() override;
-    void stop() override;
-
-private:
-    void startConnect();
-    void handleConnect(const boost::system::error_code& error);
-    void handleResolve(const boost::system::error_code& error, tcp::resolver::results_type endpoints);
-
-    // Override base callbacks
-    void onConnected() override;
-    void onDisconnected() override;
-    void onMessageReceived(const NetworkMessage& message) override;
-    void onError(const std::string& error_message) override;
+    void handleConnectionState(const std::string& type, ConnectionState state, const std::string& info);
+    void handleMessage(const std::string& type, const NetworkMessage& message);
+    void handleError(const std::string& type, const std::string& error);
+    void setConnectionState(ConnectionState state);
+    void updateConnectionInfo(const std::string& info);
+    void addLocalMessage(const std::string& message);
 };

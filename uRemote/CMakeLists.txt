@@ -9,6 +9,9 @@ if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET uRemote PROPERTY CXX_STANDARD 20)
 endif()
 
+# nlohmann-json: vcpkg supplies a CMake config target
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # Find and link dependencies provided by vcpkg (or the system).
 find_package(glew REQUIRED)
 
@@ -33,6 +36,7 @@ find_library(AVUTIL_LIB NAMES avutil)
 # Link libraries to the uRemote target.
 target_link_libraries(uRemote
   PRIVATE
+    nlohmann_json::nlohmann_json
     GLEW::GLEW
     glfw
     imgui::imgui

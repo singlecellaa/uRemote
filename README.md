@@ -19,7 +19,7 @@ vcpkg and cmake in windows
     `git clone git@github.com:singlecellaa/uRemote.git`  
     `cd uRemote`  
     `vcpkg x-update-baseline --add-initial-baseline`  
-    `vcpkg install --x-install-root=$VCPKG`  
+    `vcpkg install --x-install-root=%VCPKG%`  
     `cmake -B build`  
     `cd build`  
     双击 .sln 文件，visual studio中打开项目  

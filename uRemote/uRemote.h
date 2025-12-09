@@ -4,18 +4,29 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <fstream>
 #include <cstring>
+#include <nlohmann/json.hpp>
+
+#define CONFIG "config.json"
 
 using namespace std;
+using json = nlohmann::json;
 
 struct ConnInputForm
 {
 	char conn_name[16];
 	char host_machine[16];
-	char port[5];
 };
 
-static void check_ip(const char* ip_addr, char* conn_err) {
+struct ConnRecord
+{
+	char conn_name[16];
+	char host_machine[16];
+	char port[6];
+};
+
+static inline void check_ip(const char* ip_addr, char* conn_err) {
 	// Validate IPv4 format
 	int octets[4];
 	int num_octets = 0;
@@ -60,7 +71,7 @@ static void check_ip(const char* ip_addr, char* conn_err) {
 	}
 }
 
-static void check_port(char* port, char* err) {
+static inline void check_port(char* port, char* err) {
 	if (strlen(port) == 0) {
 		strcpy(port, "9090");
 	}
@@ -75,19 +86,14 @@ static void check_port(char* port, char* err) {
 	}
 }
 
-static void check_conn_input(ConnInputForm* input_form, char* conn_err) {
+static inline void check_conn_input(ConnInputForm* input_form, char* conn_err) {
 	if (strlen(input_form->conn_name) == 0) {
 		strcpy(conn_err, "Please Input Connection Name");
-	}
-	else {
+	} else {
 		if (strlen(input_form->host_machine) == 0) {
 			strcpy(input_form->host_machine, "localhost");
-		}
-		else if (strcmp(input_form->host_machine, "localhost") != 0) {
+		} else if (strcmp(input_form->host_machine, "localhost") != 0) {
 			check_ip(input_form->host_machine, conn_err);
-		}
-		if (!strlen(conn_err)) {
-			check_port(input_form->port, conn_err);
 		}
 	}
 }

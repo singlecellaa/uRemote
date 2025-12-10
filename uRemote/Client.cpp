@@ -19,7 +19,7 @@ void Client::start() {
 }
 
 void Client::stop() {
-    setState(ConnectionState::DISCONNECTING);
+    setState(ConnectionState::DISCONNECTING, "Client Stopping");
 
     // Cancel any pending resolver operations
     boost::system::error_code ec;

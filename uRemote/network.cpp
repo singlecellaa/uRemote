@@ -12,8 +12,10 @@ void NetworkManager::startServer(const std::string& port) {
     m_server_io_context = std::make_unique<boost::asio::io_context>();
     m_server = std::make_shared<Server>(*m_server_io_context, port);
 
-    m_server->setConnectionCallback([this](ConnectionState state, const std::string& info)
-        { handleConnectionState("Server", state, info); });
+    m_server->setConnectionCallback([this](ConnectionState state, const std::string& info) { 
+        pushConnectionEvent(state, info);
+        handleConnectionState("Server", state, info); 
+     });
 
     m_server->setMessageCallback([this](const NetworkMessage& message)
         { handleMessage("Server", message); });
@@ -31,8 +33,10 @@ void NetworkManager::startClient(const std::string& host, const std::string& por
     m_client_io_context = std::make_unique<boost::asio::io_context>();
     m_client = std::make_shared<Client>(*m_client_io_context, host, port);
 
-    m_client->setConnectionCallback([this](ConnectionState state, const std::string& info)
-        { handleConnectionState("Client", state, info); });
+    m_client->setConnectionCallback([this](ConnectionState state, const std::string& info) { 
+        pushConnectionEvent(state,info);
+        handleConnectionState("Client", state, info); 
+    });
 
     m_client->setMessageCallback([this](const NetworkMessage& message)
         { handleMessage("Client", message); });
@@ -47,17 +51,30 @@ void NetworkManager::startClient(const std::string& host, const std::string& por
 void NetworkManager::stopAll() {
     if (m_server) {
         m_server->stop();
+        m_server->close();
         m_server.reset();
+        m_server_io_context.reset();
+        
     }
     if (m_client) {
         m_client->stop();
+        m_client->close();
         m_client.reset();
+        m_client_io_context.reset();
     }
-    m_server_io_context.reset();
-    m_client_io_context.reset();
+    updateConnectionInfo("Stopped");
+}
 
-    setConnectionState(ConnectionState::DISCONNECTED);
-    updateConnectionInfo("Disconnected");
+void NetworkManager::pushConnectionEvent(ConnectionState state, const std::string& msg) {
+    std::lock_guard<std::mutex> lock(m_event_mutex);
+    m_event_queue.push_back({ state, msg, std::chrono::system_clock::now() });
+}
+
+std::vector<ConnectionEvent> NetworkManager::popEvents() {
+    std::lock_guard<std::mutex> lock(m_event_mutex);
+    std::vector<ConnectionEvent> events(m_event_queue.begin(), m_event_queue.end());
+    m_event_queue.clear();
+    return events;
 }
 
 void NetworkManager::sendMessage(const std::string& message) {

@@ -2,11 +2,13 @@
 #include "network.h"
 
 NetworkManager network_manager;
+ConnQueue conn_queue;
 
 int main() {
     json config;
     std::string local_ip = getLocalConnectedIP();
     std::string port;
+
     std::ifstream file(CONFIG);
     if (file.is_open()) {
         config = json::parse(file);
@@ -41,8 +43,12 @@ int main() {
 	ImGui_ImplOpenGL3_Init("#version 130");
 
 
-	ConnInputForm conn_input("", "");
+    ConnInputForm conn_input("", "", "");
     char port_input[6] = "";
+
+    Mode mode = Mode::NONE;
+    ConnectionState state = ConnectionState::DISCONNECTED;
+    std::string state_text;
 
     const bool show_main = true;
 	bool main_active = true;
@@ -50,16 +56,33 @@ int main() {
 	char error_text[128] = "";
     bool auto_scroll = true;
     bool show_status = true;
+    bool show_server_panel = true;
     bool show_connection_panel = true;
+    bool running = false;
     bool show_messages_panel = true;
 
     bool show_settings = false;
 
 	while (!glfwWindowShouldClose(window)) {
-        ConnectionState state = network_manager.getConnectionState();
-        std::string state_text = network_manager.getConnectionInfo();
+        state = network_manager.getConnectionState();
+        running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
+        state_text = network_manager.getConnectionInfo();
 
 		glfwPollEvents();
+        auto events = network_manager.popEvents();
+        for (const auto& event : events) {
+            switch (event.type) {
+            case ConnectionState::CONNECTED:
+                conn_queue.push(conn_input);
+                break;
+            case ConnectionState::DISCONNECTED:
+                
+                break;
+            case ConnectionState::ERR:
+                
+                break;
+            }
+        }
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame(); 
@@ -113,19 +136,30 @@ int main() {
                 }
             }
 
-            if (ImGui::Button("Start Server")) {
-                show_connection_panel = false;
-                network_manager.startServer("9090");
+            if (show_server_panel && mode != Mode::CLIENT && !running) {
+                if (ImGui::Button("Start Server")) {
+                    mode = Mode::SERVER;
+                    conn_input = { "","","" };
+                    network_manager.startServer("9090");
+                    show_server_panel = false;
+                }
             }
 
-            if (show_connection_panel) {
+            if (running) {
+                if (ImGui::Button("Stop")) {
+                    network_manager.stopAll();
+                }
+            }
+
+            if (show_connection_panel && mode != Mode::SERVER && !running) {
                 ImGui::InputTextWithHint("Connection Name", "<connection name>", conn_input.conn_name, IM_ARRAYSIZE(conn_input.conn_name));
                 ImGui::InputTextWithHint("Host Machine", "<localhost>", conn_input.host_machine, IM_ARRAYSIZE(conn_input.host_machine));
+                ImGui::InputTextWithHint("Port", port.c_str(), conn_input.port, IM_ARRAYSIZE(conn_input.port), ImGuiInputTextFlags_CharsDecimal);
 
                 if (ImGui::BeginPopup("ConnctionInputError")) {
                     ImGui::Text("%s", error_text);
                     if (ImGui::Button("Close")) {
-                        conn_input = { "","" };
+                        conn_input = { "","",""};
                         error_text[0] = '\0';
                         ImGui::CloseCurrentPopup();
                     }
@@ -136,8 +170,8 @@ int main() {
                     check_conn_input(&conn_input, error_text);
                     if (strlen(error_text)) {
                         ImGui::OpenPopup("ConnctionInputError");
-                    }
-                    else {
+                    } else {
+                        mode = Mode::CLIENT;
                         network_manager.startClient(conn_input.host_machine, port);
                     }
                 }

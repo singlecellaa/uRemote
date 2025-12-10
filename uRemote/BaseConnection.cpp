@@ -6,20 +6,19 @@ BaseConnection::BaseConnection(boost::asio::io_context& io_context)
 
 BaseConnection::~BaseConnection() {
     stop();
+    close();
 }
 
 void BaseConnection::stop() {
-    setState(ConnectionState::DISCONNECTING);
-
     boost::system::error_code ec;
     m_socket.close(ec);
+}
 
+void BaseConnection::close() {
     if (m_io_thread.joinable()) {
         m_io_context.stop();
         m_io_thread.join();
     }
-
-    setState(ConnectionState::DISCONNECTED);
 }
 
 void BaseConnection::send(const NetworkMessage& message) {

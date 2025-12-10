@@ -32,7 +32,7 @@ void Server::start() {
 }
 
 void Server::stop() {
-    setState(ConnectionState::DISCONNECTING);
+    setState(ConnectionState::DISCONNECTING, "Server Stopping");
 
     // Close acceptor first to stop accepting new connections
     boost::system::error_code ec;

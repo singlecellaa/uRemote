@@ -37,6 +37,18 @@ enum class ConnectionState {
     ERR
 };
 
+enum class Mode {
+    SERVER,
+    CLIENT,
+    NONE
+};
+
+struct ConnectionEvent {
+    ConnectionState type;
+    std::string message;
+    std::chrono::system_clock::time_point timestamp;
+};
+
 // Message structure
 struct NetworkMessage {
     std::vector<uint8_t> data;
@@ -62,6 +74,10 @@ private:
     std::vector<std::string> m_received_messages;
     std::mutex m_messages_mutex;
 
+    // Thread-safe event queue
+    std::deque<ConnectionEvent> m_event_queue;
+    std::mutex m_event_mutex;
+
     // Connection status
     std::atomic<ConnectionState> m_connection_state{ ConnectionState::DISCONNECTED };
     std::string m_connection_info;
@@ -77,6 +93,10 @@ public:
     void startClient(const std::string& host, const std::string& port);
 
     void stopAll();
+
+    void pushConnectionEvent(ConnectionState state, const std::string& msg);
+    std::vector<ConnectionEvent> popEvents();
+
     void sendMessage(const std::string& message);
     std::vector<std::string> getMessages();
     void clearMessages();

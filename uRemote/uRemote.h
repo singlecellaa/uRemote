@@ -17,13 +17,44 @@ struct ConnInputForm
 {
 	char conn_name[16];
 	char host_machine[16];
+	char port[6];
 };
 
-struct ConnRecord
-{
-	char conn_name[16];
-	char host_machine[16];
-	char port[6];
+typedef struct ConnInputForm ConnRecord;
+
+class ConnQueue {
+private:
+	std::list<ConnRecord> queue;  // Main queue storing records
+	std::unordered_map<std::string, std::list<ConnRecord>::iterator> ipMap;  // Map for O(1) lookup
+	const size_t MAX_SIZE = 10;
+
+public:
+	void push(const ConnRecord& newRecord) {
+		std::string ip(newRecord.host_machine);
+
+		auto it = ipMap.find(ip);
+		if (it != ipMap.end()) {                   // If IP already exists, remove the old record
+			queue.erase(it->second);               // Remove from list
+			ipMap.erase(it);                       // Remove from map
+		}  else if (queue.size() >= MAX_SIZE) {    // If queue is full and not a duplicate, remove the oldest (last)
+			ipMap.erase(queue.back().host_machine);
+			queue.pop_back();
+		}
+		queue.push_front(newRecord);
+		ipMap[ip] = queue.begin();
+	}
+
+	const std::list<ConnRecord>& getRecords() const { return queue; }
+	size_t size() const { return queue.size(); }
+	bool empty() const { return queue.empty(); }
+
+	void clear() {
+		queue.clear();
+		ipMap.clear();
+	}
+	bool contains(const std::string& ip) const {
+		return ipMap.find(ip) != ipMap.end();
+	}
 };
 
 static inline void check_ip(const char* ip_addr, char* conn_err) {
@@ -94,6 +125,9 @@ static inline void check_conn_input(ConnInputForm* input_form, char* conn_err) {
 			strcpy(input_form->host_machine, "localhost");
 		} else if (strcmp(input_form->host_machine, "localhost") != 0) {
 			check_ip(input_form->host_machine, conn_err);
+		}
+		if (!strlen(conn_err)) {
+			check_port(input_form->port, conn_err);
 		}
 	}
 }

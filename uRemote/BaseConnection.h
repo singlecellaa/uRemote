@@ -30,6 +30,7 @@ public:
     // Common interface
     virtual void start() = 0;
     virtual void stop();
+    void close();
     virtual void send(const NetworkMessage& message);
     virtual void send(const std::string& message);
 

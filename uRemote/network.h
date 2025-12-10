@@ -96,12 +96,12 @@ private:
 };
 
 
-static inline std::string getDefaultGatewayIP() {
-    std::string gatewayIP;
+static inline std::string getLocalConnectedIP() {
+    std::string localIP;
 
 #ifdef _WIN32
-    // Windows: 使用 GetAdapterAddresses API [citation:1]
-    ULONG bufferSize = 15000; // 初始缓冲区大小
+    // Windows: 使用 GetAdapterAddresses API
+    ULONG bufferSize = 150000;
     PIP_ADAPTER_ADDRESSES pAddresses = nullptr;
     DWORD result = ERROR_BUFFER_OVERFLOW;
 
@@ -110,10 +110,10 @@ static inline std::string getDefaultGatewayIP() {
         pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(bufferSize);
         if (pAddresses == nullptr) return "";
 
-        // 调用 GetAdapterAddresses，请求包含网关信息 [citation:1]
+        // 调用 GetAdapterAddresses，请求包含网关信息
         result = GetAdaptersAddresses(
-            AF_UNSPEC, // 获取IPv4和IPv6地址
-            GAA_FLAG_INCLUDE_GATEWAYS | GAA_FLAG_INCLUDE_ALL_INTERFACES, // 关键标志 [citation:1]
+            AF_UNSPEC,
+            GAA_FLAG_INCLUDE_GATEWAYS | GAA_FLAG_INCLUDE_ALL_INTERFACES,
             nullptr,
             pAddresses,
             &bufferSize
@@ -129,17 +129,38 @@ static inline std::string getDefaultGatewayIP() {
         }
     } while (result == ERROR_BUFFER_OVERFLOW);
 
-    // 遍历适配器链表，寻找第一个有效的IPv4默认网关
+    // 遍历适配器链表，寻找第一个具有IPv4默认网关的适配器，并获取其IPv4地址
     PIP_ADAPTER_ADDRESSES pCurrAddress = pAddresses;
-    while (pCurrAddress && gatewayIP.empty()) {
-        PIP_ADAPTER_GATEWAY_ADDRESS_LH pGateway = pCurrAddress->FirstGatewayAddress;
-        while (pGateway) {
-            if (pGateway->Address.lpSockaddr->sa_family == AF_INET) { // IPv4地址
-                sockaddr_in* sa_in = (sockaddr_in*)(pGateway->Address.lpSockaddr);
-                gatewayIP = inet_ntoa(sa_in->sin_addr);
-                break;
+    while (pCurrAddress) {
+        // 检查适配器是否已连接且运行中
+        if (pCurrAddress->OperStatus == IfOperStatusUp) {
+            // 检查是否有IPv4默认网关
+            bool hasIPv4Gateway = false;
+            PIP_ADAPTER_GATEWAY_ADDRESS_LH pGateway = pCurrAddress->FirstGatewayAddress;
+            while (pGateway) {
+                if (pGateway->Address.lpSockaddr->sa_family == AF_INET) {
+                    hasIPv4Gateway = true;
+                    break;
+                }
+                pGateway = pGateway->Next;
             }
-            pGateway = pGateway->Next;
+
+            // 如果有IPv4默认网关，则获取该适配器的IPv4地址
+            if (hasIPv4Gateway) {
+                PIP_ADAPTER_UNICAST_ADDRESS_LH pUnicast = pCurrAddress->FirstUnicastAddress;
+                while (pUnicast) {
+                    if (pUnicast->Address.lpSockaddr->sa_family == AF_INET) {
+                        sockaddr_in* sa_in = (sockaddr_in*)(pUnicast->Address.lpSockaddr);
+                        localIP = inet_ntoa(sa_in->sin_addr);
+                        break;
+                    }
+                    pUnicast = pUnicast->Next;
+                }
+
+                if (!localIP.empty()) {
+                    break; // 找到连接网络的IP地址，退出循环
+                }
+            }
         }
         pCurrAddress = pCurrAddress->Next;
     }
@@ -147,7 +168,10 @@ static inline std::string getDefaultGatewayIP() {
     if (pAddresses) free(pAddresses);
 
 #else
-    // Linux: 通过解析 /proc/net/route 文件获取默认网关
+    // Linux: 通过解析 /proc/net/route 文件获取默认网关接口，然后获取该接口的IP地址
+    std::string interfaceName;
+
+    // 第一步：从/proc/net/route获取具有默认网关的接口名
     std::ifstream routeFile("/proc/net/route");
     std::string line;
 
@@ -158,27 +182,62 @@ static inline std::string getDefaultGatewayIP() {
         char iface[256];
         unsigned long destination, gateway, flags;
 
-        // 解析路由表的每一行
         if (sscanf(line.c_str(), "%255s %lx %lx %*s %*s %*s %*s %lx",
             iface, &destination, &gateway, &flags) == 4) {
             // 检查是否是默认路由（目标地址为0）并且网关不为0
             if (destination == 0 && gateway != 0) {
-                // 将十六进制格式的网关地址转换为点分十进制
-                unsigned char bytes[4];
-                bytes[0] = gateway & 0xFF;
-                bytes[1] = (gateway >> 8) & 0xFF;
-                bytes[2] = (gateway >> 16) & 0xFF;
-                bytes[3] = (gateway >> 24) & 0xFF;
-
-                char ipStr[INET_ADDRSTRLEN];
-                snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d",
-                    bytes[0], bytes[1], bytes[2], bytes[3]);
-                gatewayIP = ipStr;
+                interfaceName = iface;
                 break;
             }
         }
     }
+    routeFile.close();
+
+    // 第二步：通过getifaddrs获取指定接口的IPv4地址
+    if (!interfaceName.empty()) {
+        struct ifaddrs* ifaddr, * ifa;
+
+        if (getifaddrs(&ifaddr) == -1) {
+            return "";
+        }
+
+        // 遍历所有接口
+        for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+            if (ifa->ifa_addr == nullptr) {
+                continue;
+            }
+
+            // 检查接口名是否匹配并且是IPv4地址
+            if (interfaceName == ifa->ifa_name && ifa->ifa_addr->sa_family == AF_INET) {
+                struct sockaddr_in* sa = (struct sockaddr_in*)ifa->ifa_addr;
+                char ipStr[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(sa->sin_addr), ipStr, INET_ADDRSTRLEN);
+                localIP = ipStr;
+                break;
+            }
+        }
+
+        freeifaddrs(ifaddr);
+    }
+
+    // 备选方案：如果上述方法失败，尝试使用ioctl获取IP
+    if (localIP.empty() && !interfaceName.empty()) {
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0) {
+            struct ifreq ifr;
+            memset(&ifr, 0, sizeof(ifr));
+            strncpy(ifr.ifr_name, interfaceName.c_str(), IFNAMSIZ - 1);
+
+            if (ioctl(fd, SIOCGIFADDR, &ifr) == 0) {
+                struct sockaddr_in* sa = (struct sockaddr_in*)&ifr.ifr_addr;
+                char ipStr[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(sa->sin_addr), ipStr, INET_ADDRSTRLEN);
+                localIP = ipStr;
+            }
+            close(fd);
+        }
+    }
 #endif
 
-    return gatewayIP;
+    return localIP;
 }

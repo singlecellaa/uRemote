@@ -5,22 +5,15 @@ NetworkManager network_manager;
 
 int main() {
     json config;
-    std::string local_ip;
-    std::string title;
+    std::string local_ip = getLocalConnectedIP();
     std::string port;
     std::ifstream file(CONFIG);
     if (file.is_open()) {
         config = json::parse(file);
-        local_ip = config["local_ip"];
-        title = config["title"];
         port = config["port"];
         file.close();
     } else {
-        local_ip = getDefaultGatewayIP();
-        title = "uRemote\t" + local_ip;
         port = "9090";
-        config["local_ip"] = local_ip;
-        config["title"] = title;
         config["port"] = port;
         std::ofstream file(CONFIG);
         file << config.dump(4);
@@ -73,7 +66,7 @@ int main() {
 		ImGui::NewFrame();
 
         if (show_main) {
-            ImGui::Begin(title.c_str(), &main_active, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::Begin(("uRemote\t" + local_ip).c_str(), &main_active, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_AlwaysAutoResize);
             if (ImGui::BeginMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("Open..", "Ctrl+O")) {

@@ -24,12 +24,15 @@ void BaseConnection::close() {
 void BaseConnection::send(const NetworkMessage& message) {
     if (!isConnected()) return;
 
-    auto processed_msg = preprocessSend(message);
-    auto self = shared_from_this();
+    NetworkMessage processed_msg = preprocessSend(message);
+    std::shared_ptr<BaseConnection> self = shared_from_this();
+    
+    // Create a shared_ptr to the message data to keep it alive during async operation
+    std::shared_ptr<NetworkMessage> msg_data = std::make_shared<NetworkMessage>(processed_msg);
 
     boost::asio::async_write(m_socket,
-        boost::asio::buffer(processed_msg.data),
-        [this, self](const boost::system::error_code& error, size_t bytes_transferred) {
+        boost::asio::buffer(msg_data->data),
+        [this, self, msg_data](const boost::system::error_code& error, size_t bytes_transferred) {
             handleWrite(error, bytes_transferred);
         });
 }

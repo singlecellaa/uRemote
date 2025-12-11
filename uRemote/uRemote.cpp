@@ -89,7 +89,7 @@ int main() {
 		ImGui::NewFrame();
 
         if (show_main) {
-            ImGui::Begin(("uRemote\t" + local_ip).c_str(), &main_active, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::Begin(("uRemote\t" + local_ip).c_str(), &main_active, ImGuiWindowFlags_MenuBar);
             if (ImGui::BeginMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("Open..", "Ctrl+O")) {
@@ -141,7 +141,6 @@ int main() {
                     mode = Mode::SERVER;
                     conn_input = { "","","" };
                     network_manager.startServer("9090");
-                    show_server_panel = false;
                 }
             }
 
@@ -186,25 +185,20 @@ int main() {
 
                 // Message display area
                 const float footer_height = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
-                ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height), false,
-                    ImGuiWindowFlags_HorizontalScrollbar);
+                ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height), false, ImGuiWindowFlags_HorizontalScrollbar);
 
                 std::vector<std::string> messages = network_manager.getMessages();
                 for (const auto& msg : messages) {
                     // Color code messages
                     if (msg.find("error") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-                    }
-                    else if (msg.find("received") != std::string::npos) {
+                    } else if (msg.find("received") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-                    }
-                    else if (msg.find("Sent") != std::string::npos) {
+                    } else if (msg.find("Sent") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.5f, 1.0f, 1.0f));
-                    }
-                    else {
+                    } else {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                     }
-
                     ImGui::TextUnformatted(msg.c_str());
                     ImGui::PopStyleColor();
                 }

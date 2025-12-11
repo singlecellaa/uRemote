@@ -91,7 +91,8 @@ void NetworkManager::sendMessage(const std::string& message) {
 
 std::vector<std::string> NetworkManager::getMessages() {
     std::lock_guard<std::mutex> lock(m_messages_mutex);
-    return m_received_messages;
+    std::vector<std::string> messages(m_received_messages.begin(), m_received_messages.end());
+    return messages;
 }
 
 void NetworkManager::clearMessages() {
@@ -158,6 +159,6 @@ void NetworkManager::addLocalMessage(const std::string &message) {
 
     // Keep only last 100 messages to prevent memory growth
     if (m_received_messages.size() > 100) {
-        m_received_messages.erase(m_received_messages.begin());
+        m_received_messages.pop_front();
     }
 }

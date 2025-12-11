@@ -71,7 +71,7 @@ private:
     std::unique_ptr<boost::asio::io_context> m_client_io_context;
 
     // Thread-safe message queue
-    std::vector<std::string> m_received_messages;
+    std::deque<std::string> m_received_messages;
     std::mutex m_messages_mutex;
 
     // Thread-safe event queue

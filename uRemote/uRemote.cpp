@@ -45,33 +45,43 @@ int main() {
 	ImGui_ImplOpenGL3_Init("#version 130");
 
 
-    ConnInputForm conn_input("", "", "");
-    char port_input[6] = "";
-
+    const bool show_main = true;
+	bool main_active = true;
+	int display_w, display_h;
+	
+    bool show_status = true;
     Mode mode = Mode::NONE;
     ConnectionState state = ConnectionState::DISCONNECTED;
     std::string state_text;
 
-    const bool show_main = true;
-	bool main_active = true;
-	int display_w, display_h;
-	char error_text[128] = "";
-    bool auto_scroll = true;
-    bool show_status = true;
     bool show_server_panel = true;
     bool show_connection_panel = true;
+    ConnInputForm conn_input("", "", "");
+    char port_input[6] = "";
+    char error_text[128] = "";
+
     bool running = false;
+
     bool show_messages_panel = true;
+    bool auto_scroll = true;
 
     bool show_settings = false;
 
     bool show_recent_conn = false;
+
+    bool show_cli = true;
+	std::vector<std::tuple<std::string, std::string>> cli_histories;
+	char cli_input[256] = "";
 
 	while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
         state_text = network_manager.getConnectionInfo();
 
+        if (glfwGetKey(window,GLFW_KEY_ESCAPE) == GLFW_PRESS)
+			glfwSetWindowShouldClose(window, true);
+        if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)) 
+            show_recent_conn = true;
 		glfwPollEvents();
         auto events = network_manager.popEvents();
         for (const auto& event : events) {
@@ -322,6 +332,35 @@ int main() {
                 show_settings = false;
             }
 			ImGui::End();
+        }
+
+        if (show_cli) {
+            ImGui::StyleColorsDark();
+			ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+            ImGui::Begin("Command Line Interface", &show_cli, ImGuiWindowFlags_NoResize);
+
+            for (const auto& [cmd, output] : cli_histories) {
+                ImGui::TextWrapped(">%s", cmd.c_str());
+                ImGui::TextWrapped("%s", output.c_str());
+			}
+
+            ImGui::Text("$");
+            ImGui::SameLine();
+			ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
+            if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (cli_input[0] != '\0') {
+                    std::string command(cli_input);
+                    std::string output = command;
+                    cli_histories.emplace_back(command, output);
+                    if (cli_histories.size() > 100) 
+                        cli_histories.erase(cli_histories.begin());
+                    cli_input[0] = '\0';
+				}
+            }
+            ImGui::PopItemWidth();
+
+            ImGui::End();
+            ImGui::StyleColorsLight();
         }
 
 		ImGui::Render();

@@ -55,6 +55,29 @@ public:
 	bool contains(const std::string& ip) const {
 		return ipMap.find(ip) != ipMap.end();
 	}
+	// Load queue from JSON
+	void fromJson(const json& j) {
+		clear();  // Clear existing data
+		if (!j.is_array())  return;
+		for (auto it = j.rbegin(); it != j.rend(); ++it) { // Load in reverse order to maintain correct order when pushed
+			ConnRecord record;
+			snprintf(record.conn_name, sizeof(record.conn_name), it->value("conn_name", "").c_str());
+			snprintf(record.host_machine, sizeof(record.host_machine), it->value("host_machine", "").c_str());
+			snprintf(record.port, sizeof(record.port), it->value("port", "").c_str());
+			push(record);
+		}
+	}
+	json toJson() const {
+		json j = json::array();
+		for (const auto& record : queue) {
+			json recordJson;
+			recordJson["conn_name"] = record.conn_name;
+			recordJson["host_machine"] = record.host_machine;
+			recordJson["port"] = record.port;
+			j.push_back(recordJson);
+		}
+		return j;
+	}
 };
 
 static inline void check_ip(const char* ip_addr, char* conn_err) {

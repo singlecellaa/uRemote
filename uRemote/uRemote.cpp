@@ -2,7 +2,7 @@
 #include "network.h"
 
 NetworkManager network_manager;
-ConnQueue conn_queue;
+ConnQueue recent_conn;
 
 int main() {
     json config;
@@ -12,11 +12,13 @@ int main() {
     std::ifstream file(CONFIG);
     if (file.is_open()) {
         config = json::parse(file);
-        port = config["port"];
+		port = config.value("port", "9090");
+		json recent_conn_json = config.value("recent_conn", json());
+        recent_conn.fromJson(recent_conn_json);
         file.close();
     } else {
-        port = "9090";
-        config["port"] = port;
+        config["port"] = port = "9090";
+        config["recent_conn"] = json::array();
         std::ofstream file(CONFIG);
         file << config.dump(4);
         file.close();
@@ -63,6 +65,8 @@ int main() {
 
     bool show_settings = false;
 
+    bool show_recent_conn = false;
+
 	while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
@@ -72,9 +76,14 @@ int main() {
         auto events = network_manager.popEvents();
         for (const auto& event : events) {
             switch (event.type) {
-            case ConnectionState::CONNECTED:
-                conn_queue.push(conn_input);
+            case ConnectionState::CONNECTED: {
+                recent_conn.push(conn_input);
+                config["recent_conn"] = recent_conn.toJson();
+                std::ofstream file(CONFIG);
+                file << config.dump(4);
+                file.close();
                 break;
+            }
             case ConnectionState::DISCONNECTED:
                 
                 break;
@@ -93,7 +102,7 @@ int main() {
             if (ImGui::BeginMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("Open..", "Ctrl+O")) {
-                        // TODO: the last 10 recent connection
+						show_recent_conn = true;
                     }
                     ImGui::EndMenu();
                 }
@@ -269,6 +278,50 @@ int main() {
                 show_settings = false;
             }
             ImGui::End();
+        }
+
+        if (show_recent_conn) {
+            ImGui::Begin("Recent Connections", &show_recent_conn, ImGuiWindowFlags_AlwaysAutoResize);
+            std::list<ConnRecord>records = recent_conn.getRecords();
+            int index = 0;
+
+            for (auto& record : records) {
+                ImGui::PushID(index);
+
+                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+
+                ImGui::BeginChild("##item", 
+                    ImVec2(600.f, ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2 + 8.f), 
+                    true // Border
+                ); 
+
+                bool clicked = ImGui::Selectable("##selectable", false, 0, ImGui::GetContentRegionAvail());
+
+                ImVec2 cursorPos = ImGui::GetItemRectMin();
+                ImGui::SetCursorScreenPos(cursorPos);
+
+                // Draw text content
+                ImGui::Text("%10s",record.conn_name);
+                ImGui::SameLine();
+                ImGui::Text("%23s",record.host_machine);
+                ImGui::SameLine();
+                ImGui::Text("%12s",record.port);
+                ImGui::EndChild();
+                ImGui::PopStyleVar(1);
+
+                if (clicked) {
+                    conn_input = record;
+                    network_manager.startClient(record.host_machine, record.port);
+                    show_recent_conn = false;
+                }
+
+                ImGui::PopID();
+                index++;
+            }
+            if (ImGui::Button("Close")) {
+                show_settings = false;
+            }
+			ImGui::End();
         }
 
 		ImGui::Render();

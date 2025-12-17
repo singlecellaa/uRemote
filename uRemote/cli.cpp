@@ -78,6 +78,23 @@ bool ProcessManager::start(const std::string& command) {
     return true;
 }
 
+void ProcessManager::checkMarker(std::string& output) {
+    size_t markerPos1 = output.find(" & echo " + endMarker + "\n");
+    size_t markerPos2 = output.find(endMarker);
+    if (expectingCompletion) {
+        if (markerPos1 != std::string::npos)
+            output.erase(markerPos1, (" & echo " + endMarker + "\n").length());
+        else if (markerPos2 != std::string::npos) {
+            size_t markerPos2End = markerPos2 + endMarker.length();
+            if (output[markerPos2End] == '\r' && output[markerPos2End + 1] == '\n')
+                output.erase(markerPos2, endMarker.length() + 2);
+            else
+                output.erase(markerPos2, endMarker.length());
+            expectingCompletion = false;
+        }
+    }
+}
+
 void ProcessManager::readOutput() {
     constexpr size_t bufferSize = 4096;
     std::array<char, bufferSize> buffer;
@@ -89,9 +106,12 @@ void ProcessManager::readOutput() {
                 buffer[bytesRead] = '\0';
                 std::string output(buffer.data());
 
+				checkMarker(output);
+
                 {
                     std::lock_guard<std::mutex> lock(outputMutex);
-                    outputQueue.push({ output, false });
+                    if (output.length())
+                        outputQueue.push({ output, false });
                 }
 
                 if (outputCallback) {
@@ -137,7 +157,9 @@ bool ProcessManager::sendCommand(const std::string& command) {
         return false;
     }
 
-    std::string cmd = command + "\n";
+	expectingCompletion = true;
+
+    std::string cmd = command + " & echo " + endMarker + "\n";
     DWORD bytesWritten;
     BOOL success = WriteFile(hChildStdinWr, cmd.c_str(), static_cast<DWORD>(cmd.length()), &bytesWritten, NULL);
 
@@ -290,6 +312,8 @@ void ProcessManager::readOutput() {
                 buffer[bytesRead] = '\0';
                 std::string output(buffer.data());
 
+                checkMarker(output);
+
                 {
                     std::lock_guard<std::mutex> lock(outputMutex);
                     outputQueue.push({ output, false });
@@ -394,4 +418,8 @@ void ProcessManager::setOutputCallback(std::function<void(const std::string&, bo
 
 ProcessState ProcessManager::getState() const {
     return state.load();
+}
+
+bool ProcessManager::busy() const {
+	return expectingCompletion;
 }

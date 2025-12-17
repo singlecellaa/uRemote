@@ -355,16 +355,17 @@ int main() {
                     ImGui::TextWrapped("%s", log.c_str());
 			}
 
-			ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
-            ImGui::SameLine();
-            if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                std::string command(cli_input);
-                cli_input[0] = '\0';
-                cmd.sendCommand(command);
-                new_input = true;
+            if (!cmd.busy()) {
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
+                ImGui::SameLine();
+                if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    std::string command(cli_input);
+                    cli_input[0] = '\0';
+                    cmd.sendCommand(command);
+                    new_input = true;
+                }
+                ImGui::PopItemWidth();
             }
-            ImGui::PopItemWidth();
-
             output_vec = cmd.getOutput();
             if (output_vec.size()) {
                 for (size_t i = 0; i < output_vec.size(); ++i) {

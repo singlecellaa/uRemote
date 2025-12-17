@@ -51,6 +51,8 @@ public:
 
     ProcessState getState() const;
 
+    bool busy() const;
+
 private:
 #ifdef _WIN32
     HANDLE hChildStdinRd = NULL;
@@ -73,7 +75,10 @@ private:
     std::atomic<ProcessState> state{ ProcessState::NotStarted };
     std::atomic<bool> shouldStop{ false };
     std::function<void(const std::string&, bool)> outputCallback;
+    const std::string endMarker = "__PROCESS_MANAGER_EOF__";
+    bool expectingCompletion = false;
 
+    void checkMarker(std::string& output);
     void readOutput();
     void readError();
     void cleanup();

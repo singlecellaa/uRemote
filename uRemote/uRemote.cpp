@@ -1,8 +1,10 @@
 ﻿#include "uRemote.h"
 #include "network.h"
+#include "cli.h"
 
 NetworkManager network_manager;
 ConnQueue recent_conn;
+ProcessManager cmd;
 
 int main() {
     json config;
@@ -70,8 +72,13 @@ int main() {
     bool show_recent_conn = false;
 
     bool show_cli = true;
-	std::vector<std::tuple<std::string, std::string>> cli_histories;
+	std::vector<std::string> cli_logs;
+    std::string pwd;
 	char cli_input[256] = "";
+    bool new_input = false;
+    std::vector<ProcessOutput> output_vec;
+    bool new_log = false;
+    bool scroll = false;
 
 	while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
@@ -335,30 +342,51 @@ int main() {
         }
 
         if (show_cli) {
+            if (!cmd.isRunning()) {
+                cmd.start();
+            }
+
             ImGui::StyleColorsDark();
 			ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
-            ImGui::Begin("Command Line Interface", &show_cli, ImGuiWindowFlags_NoResize);
+            ImGui::Begin("Command Line Interface", &show_cli);
 
-            for (const auto& [cmd, output] : cli_histories) {
-                ImGui::TextWrapped(">%s", cmd.c_str());
-                ImGui::TextWrapped("%s", output.c_str());
+            for (const auto& log : cli_logs) {
+                if (log.length())
+                    ImGui::TextWrapped("%s", log.c_str());
 			}
 
-            ImGui::Text("$");
-            ImGui::SameLine();
 			ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
+            ImGui::SameLine();
             if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                if (cli_input[0] != '\0') {
-                    std::string command(cli_input);
-                    std::string output = command;
-                    cli_histories.emplace_back(command, output);
-                    if (cli_histories.size() > 100) 
-                        cli_histories.erase(cli_histories.begin());
-                    cli_input[0] = '\0';
-				}
+                std::string command(cli_input);
+                cli_input[0] = '\0';
+                cmd.sendCommand(command);
+                new_input = true;
             }
             ImGui::PopItemWidth();
 
+            output_vec = cmd.getOutput();
+            if (output_vec.size()) {
+                for (size_t i = 0; i < output_vec.size(); ++i) {
+                    if (new_input) {
+                        cli_logs.back() += output_vec[i].text;
+                        new_input = false;
+                    } else
+                        cli_logs.emplace_back(output_vec[i].text);
+                }
+                output_vec.clear();
+                if (cli_logs.size() > 200)
+                    cli_logs.erase(cli_logs.begin());
+                new_log = true;
+            }
+            if (scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                ImGui::SetScrollHereY(1.0f);
+                scroll = false;
+            }
+            if (new_log) {
+                new_log = false;
+                scroll = true; //scroll next round, the logs are updated
+            }
             ImGui::End();
             ImGui::StyleColorsLight();
         }

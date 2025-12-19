@@ -49,11 +49,35 @@ struct ConnectionEvent {
     std::chrono::system_clock::time_point timestamp;
 };
 
+enum class MessageType {
+    TEXT,
+    COMMAND,
+    TERMIAL_OUTPUT,
+    BINARY
+};
+
 // Message structure
 struct NetworkMessage {
+	MessageType type;
     std::vector<uint8_t> data;
     std::string toString() const {
         return std::string(data.begin(), data.end());
+    }
+    std::vector<uint8_t> serialize() const {
+        std::vector<uint8_t> buffer;
+
+        // Type (1 byte)
+        buffer.push_back(static_cast<uint8_t>(type));
+
+        // Size (4 bytes in network byte order)
+        uint32_t net_size = htonl(static_cast<uint32_t>(data.size()));
+        const uint8_t* size_bytes = reinterpret_cast<const uint8_t*>(&net_size);
+        buffer.insert(buffer.end(), size_bytes, size_bytes + 4);
+
+        // Data
+        buffer.insert(buffer.end(), data.begin(), data.end());
+
+        return buffer;
     }
 };
 
@@ -72,11 +96,15 @@ private:
 
     // Thread-safe message queue
     std::deque<std::string> m_received_messages;
-    std::mutex m_messages_mutex;
+    std::mutex m_received_messages_mutex;
+
+    // Thread-safe signal queue
+    std::deque<ConnectionState> m_signal_queue;
+    std::mutex m_signal_mutex;
 
     // Thread-safe event queue
-    std::deque<ConnectionEvent> m_event_queue;
-    std::mutex m_event_mutex;
+    std::deque<NetworkMessage> m_message_queue;
+    std::mutex m_message_mutex;
 
     // Connection status
     std::atomic<ConnectionState> m_connection_state{ ConnectionState::DISCONNECTED };
@@ -94,10 +122,14 @@ public:
 
     void stopAll();
 
-    void pushConnectionEvent(ConnectionState state, const std::string& msg);
-    std::vector<ConnectionEvent> popEvents();
+    void pushSignal(ConnectionState state);
+    std::vector<ConnectionState> popSignals();
+
+    void pushNetworkMessage(const NetworkMessage& msg);
+    std::vector<NetworkMessage> popNetworkMessages();
 
     void sendMessage(const std::string& message);
+    void sendMessage(const NetworkMessage& message);
     std::vector<std::string> getMessages();
     void clearMessages();
     ConnectionState getConnectionState() const;

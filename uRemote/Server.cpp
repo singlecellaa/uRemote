@@ -9,7 +9,7 @@ Server::~Server() {
 }
 
 void Server::start() {
-    setState(ConnectionState::CONNECTING);
+    setState(ConnectionState::CONNECTING, "CONNECTING");
 
     try {
         tcp::endpoint endpoint(tcp::v4(), std::stoi(m_port));
@@ -24,10 +24,8 @@ void Server::start() {
         m_io_thread = std::thread([this]() {
             m_io_context.run();
             });
-
-    }
-    catch (const std::exception& e) {
-        setState(ConnectionState::ERR, e.what());
+    } catch (const std::exception& e) {
+        setState(ConnectionState::ERR, "Server start error: " + std::string(e.what()));
     }
 }
 

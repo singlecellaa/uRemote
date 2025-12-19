@@ -25,11 +25,6 @@ enum class ProcessState {
     Error
 };
 
-struct ProcessOutput {
-    std::string text;
-    bool isError;
-};
-
 class ProcessManager {
 public:
     ProcessManager();
@@ -39,7 +34,7 @@ public:
 
     bool sendCommand(const std::string& command);
 
-    std::vector<ProcessOutput> getOutput();
+    std::vector<std::string> getOutput();
 
     bool isRunning() const;
 
@@ -71,7 +66,7 @@ private:
     std::thread readThread;
     std::thread errorThread;
     std::mutex outputMutex;
-    std::queue<ProcessOutput> outputQueue;
+    std::queue<std::string> outputQueue;
     std::atomic<ProcessState> state{ ProcessState::NotStarted };
     std::atomic<bool> shouldStop{ false };
     std::function<void(const std::string&, bool)> outputCallback;

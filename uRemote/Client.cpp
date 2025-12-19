@@ -9,7 +9,7 @@ Client::~Client() {
 }
 
 void Client::start() {
-    setState(ConnectionState::CONNECTING);
+    setState(ConnectionState::CONNECTING, "CONNECTING");
     startConnect();
 
     // Start IO context in separate thread

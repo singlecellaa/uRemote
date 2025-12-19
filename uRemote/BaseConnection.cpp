@@ -21,6 +21,13 @@ void BaseConnection::close() {
     }
 }
 
+void BaseConnection::send(const std::string& message) {
+    NetworkMessage msg;
+    msg.type = MessageType::TEXT;
+    msg.data.assign(message.begin(), message.end());
+    send(msg);
+}
+
 void BaseConnection::send(const NetworkMessage& message) {
     if (!isConnected()) return;
 
@@ -28,19 +35,62 @@ void BaseConnection::send(const NetworkMessage& message) {
     std::shared_ptr<BaseConnection> self = shared_from_this();
     
     // Create a shared_ptr to the message data to keep it alive during async operation
-    std::shared_ptr<NetworkMessage> msg_data = std::make_shared<NetworkMessage>(processed_msg);
+    auto serialized = std::make_shared<std::vector<uint8_t>>(processed_msg.serialize());
 
     boost::asio::async_write(m_socket,
-        boost::asio::buffer(msg_data->data),
-        [this, self, msg_data](const boost::system::error_code& error, size_t bytes_transferred) {
+        boost::asio::buffer(*serialized),
+        [this, self, serialized](const boost::system::error_code& error, size_t bytes_transferred) {
             handleWrite(error, bytes_transferred);
         });
 }
 
-void BaseConnection::send(const std::string& message) {
-    NetworkMessage msg;
-    msg.data.assign(message.begin(), message.end());
-    send(msg);
+void BaseConnection::handleWrite(const boost::system::error_code& error, size_t bytes_transferred) {
+    if (error) {
+        std::string error_msg = "Write error: " + error.message();
+        if (m_error_callback) {
+            m_error_callback(error_msg);
+        }
+        onError(error_msg);
+        stop();
+    }
+}
+
+void BaseConnection::startReading() {
+    auto self = shared_from_this();
+    m_socket.async_read_some(boost::asio::buffer(m_read_buffer),
+        [this, self](const boost::system::error_code& error, size_t bytes_transferred) {
+            handleRead(error, bytes_transferred);
+        });
+}
+
+void BaseConnection::handleRead(const boost::system::error_code& error, size_t bytes_transferred) {
+    if (!error) {
+        NetworkMessage message;
+        message.type = MessageType(m_read_buffer[0]);
+        uint32_t net_size;
+		std::memcpy(&net_size, m_read_buffer.data() + 1, 4);
+		uint32_t data_size = ntohl(net_size);
+        message.data.assign(m_read_buffer.begin() + 5, m_read_buffer.begin() + 5 + data_size);
+
+        auto processed_msg = preprocessReceive(message);
+
+        if (m_message_callback) {
+            m_message_callback(processed_msg);
+        }
+
+        onMessageReceived(processed_msg);
+
+        startReading();
+    } else {
+        if (error != boost::asio::error::operation_aborted) {
+            std::string error_msg = "Read error: " + error.message();
+            if (m_error_callback) {
+                m_error_callback(error_msg);
+            }
+            onError(error_msg);
+            stop();
+        }
+    }
 }
 
 void BaseConnection::setConnectionCallback(ConnectionCallback callback) {
@@ -72,54 +122,5 @@ void BaseConnection::setState(ConnectionState new_state, const std::string& info
 
     if (m_connection_callback) {
         m_connection_callback(new_state, info);
-    }
-}
-
-void BaseConnection::startReading() {
-    auto self = shared_from_this();
-    m_socket.async_read_some(boost::asio::buffer(m_read_buffer),
-        [this, self](const boost::system::error_code& error, size_t bytes_transferred) {
-            handleRead(error, bytes_transferred);
-        });
-}
-
-void BaseConnection::handleRead(const boost::system::error_code& error, size_t bytes_transferred) {
-    if (!error) {
-        NetworkMessage message;
-        message.data.assign(m_read_buffer.begin(), m_read_buffer.begin() + bytes_transferred);
-
-        auto processed_msg = preprocessReceive(message);
-
-        // Call message callback
-        if (m_message_callback) {
-            m_message_callback(processed_msg);
-        }
-
-        // Call virtual method for derived classes
-        onMessageReceived(processed_msg);
-
-        // Continue reading
-        startReading();
-    }
-    else {
-        if (error != boost::asio::error::operation_aborted) {
-            std::string error_msg = "Read error: " + error.message();
-            if (m_error_callback) {
-                m_error_callback(error_msg);
-            }
-            onError(error_msg);
-            stop();
-        }
-    }
-}
-
-void BaseConnection::handleWrite(const boost::system::error_code& error, size_t bytes_transferred) {
-    if (error) {
-        std::string error_msg = "Write error: " + error.message();
-        if (m_error_callback) {
-            m_error_callback(error_msg);
-        }
-        onError(error_msg);
-        stop();
     }
 }

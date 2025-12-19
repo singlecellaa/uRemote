@@ -166,9 +166,9 @@ bool ProcessManager::sendCommand(const std::string& command) {
     return success && (bytesWritten == cmd.length());
 }
 
-std::vector<ProcessOutput> ProcessManager::getOutput() {
+std::vector<std::string> ProcessManager::getOutput() {
     std::lock_guard<std::mutex> lock(outputMutex);
-    std::vector<ProcessOutput> result;
+    std::vector<std::string> result;
 
     while (!outputQueue.empty()) {
         result.push_back(outputQueue.front());
@@ -352,9 +352,9 @@ bool ProcessManager::sendCommand(const std::string& command) {
     return written == static_cast<ssize_t>(cmd.length());
 }
 
-std::vector<ProcessOutput> ProcessManager::getOutput() {
+std::vector<std::string> ProcessManager::getOutput() {
     std::lock_guard<std::mutex> lock(outputMutex);
-    std::vector<ProcessOutput> result;
+    std::vector<std::string> result;
 
     while (!outputQueue.empty()) {
         result.push_back(outputQueue.front());

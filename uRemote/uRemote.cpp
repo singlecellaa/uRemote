@@ -14,11 +14,12 @@ int main() {
     std::ifstream file(CONFIG);
     if (file.is_open()) {
         config = json::parse(file);
-		port = config.value("port", "9090");
-		json recent_conn_json = config.value("recent_conn", json());
+        port = config.value("port", "9090");
+        json recent_conn_json = config.value("recent_conn", json());
         recent_conn.fromJson(recent_conn_json);
         file.close();
-    } else {
+    }
+    else {
         config["port"] = port = "9090";
         config["recent_conn"] = json::array();
         std::ofstream file(CONFIG);
@@ -26,31 +27,31 @@ int main() {
         file.close();
     }
 
-	if (!glfwInit()) return -1;
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "uRemote", NULL, NULL);
-	if (!window) {
-		glfwTerminate();
-		return -1;
-	}
+    if (!glfwInit()) return -1;
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "uRemote", NULL, NULL);
+    if (!window) {
+        glfwTerminate();
+        return -1;
+    }
 
-	glfwMakeContextCurrent(window);
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	ImGui::StyleColorsLight();
-	ImFontConfig font_cfg;
-	font_cfg.SizePixels = 22.0f;
-	io.Fonts->AddFontDefault(&font_cfg);
+    glfwMakeContextCurrent(window);
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsLight();
+    ImFontConfig font_cfg;
+    font_cfg.SizePixels = 22.0f;
+    io.Fonts->AddFontDefault(&font_cfg);
 
 
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init("#version 130");
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
 
 
     const bool show_main = true;
-	bool main_active = true;
-	int display_w, display_h;
-	
+    bool main_active = true;
+    int display_w, display_h;
+
     bool show_status = true;
     Mode mode = Mode::NONE;
     ConnectionState state = ConnectionState::DISCONNECTED;
@@ -63,6 +64,7 @@ int main() {
     char error_text[128] = "";
 
     bool running = false;
+    std::vector<std::string> server_output_vec;
 
     bool show_messages_panel = true;
     bool auto_scroll = true;
@@ -72,27 +74,27 @@ int main() {
     bool show_recent_conn = false;
 
     bool show_cli = true;
-	std::vector<std::string> cli_logs;
+    std::vector<std::string> cli_logs;
     std::string pwd;
-	char cli_input[256] = "";
+    char cli_input[256] = "";
     bool new_input = false;
-    std::vector<ProcessOutput> output_vec;
+    std::vector<std::string> client_output_vec;
     bool new_log = false;
     bool scroll = false;
 
-	while (!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
         state_text = network_manager.getConnectionInfo();
 
-        if (glfwGetKey(window,GLFW_KEY_ESCAPE) == GLFW_PRESS)
-			glfwSetWindowShouldClose(window, true);
-        if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)) 
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+        if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS))
             show_recent_conn = true;
-		glfwPollEvents();
-        auto events = network_manager.popEvents();
-        for (const auto& event : events) {
-            switch (event.type) {
+        glfwPollEvents();
+        auto signals = network_manager.popSignals();
+        for (const auto& signal : signals) {
+            switch (signal) {
             case ConnectionState::CONNECTED: {
                 recent_conn.push(conn_input);
                 config["recent_conn"] = recent_conn.toJson();
@@ -102,24 +104,46 @@ int main() {
                 break;
             }
             case ConnectionState::DISCONNECTED:
-                
+                if (cmd.isRunning()) {
+                    cmd.stop();
+                }
                 break;
             case ConnectionState::ERR:
-                
+
                 break;
             }
         }
 
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame(); 
-		ImGui::NewFrame();
+        auto network_messages = network_manager.popNetworkMessages();
+        for (const auto& msg : network_messages) {
+            switch (msg.type) {
+            case MessageType::COMMAND:
+                if (mode == Mode::SERVER && cmd.isRunning()) {
+                    cmd.sendCommand(msg.toString());
+					std::cout << "Server received commmand: " << msg.toString() << std::endl;
+                }
+                break;
+            case MessageType::TERMIAL_OUTPUT:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    client_output_vec.push_back(msg.toString());
+					std::cout << "terminal received output: " << msg.toString() << std::endl;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
         if (show_main) {
             ImGui::Begin(("uRemote\t" + local_ip).c_str(), &main_active, ImGuiWindowFlags_MenuBar);
             if (ImGui::BeginMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("Open..", "Ctrl+O")) {
-						show_recent_conn = true;
+                        show_recent_conn = true;
                     }
                     ImGui::EndMenu();
                 }
@@ -162,21 +186,35 @@ int main() {
                 }
             }
 
-            if (show_server_panel && mode != Mode::CLIENT && !running) {
+            if (show_server_panel && !running) {
                 if (ImGui::Button("Start Server")) {
                     mode = Mode::SERVER;
                     conn_input = { "","","" };
-                    network_manager.startServer("9090");
+                    network_manager.startServer(port);
+                    if (!cmd.isRunning()) {
+                        cmd.start();
+                    }
                 }
             }
 
             if (running) {
                 if (ImGui::Button("Stop")) {
                     network_manager.stopAll();
+                    mode = Mode::NONE;
+                }
+                if (state == ConnectionState::CONNECTED && mode == Mode::SERVER && cmd.isRunning()) {
+                    //send output by network manager server to client
+                    server_output_vec = cmd.getOutput();
+                    for (const auto& output : server_output_vec) {
+                        NetworkMessage msg;
+                        msg.type = MessageType::TERMIAL_OUTPUT;
+                        msg.data.assign(output.begin(), output.end());
+                        network_manager.sendMessage(msg);
+                    }
                 }
             }
 
-            if (show_connection_panel && mode != Mode::SERVER && !running) {
+            if (show_connection_panel && !running) {
                 ImGui::InputTextWithHint("Connection Name", "<connection name>", conn_input.conn_name, IM_ARRAYSIZE(conn_input.conn_name));
                 ImGui::InputTextWithHint("Host Machine", "<localhost>", conn_input.host_machine, IM_ARRAYSIZE(conn_input.host_machine));
                 ImGui::InputTextWithHint("Port", port.c_str(), conn_input.port, IM_ARRAYSIZE(conn_input.port), ImGuiInputTextFlags_CharsDecimal);
@@ -184,7 +222,7 @@ int main() {
                 if (ImGui::BeginPopup("ConnctionInputError")) {
                     ImGui::Text("%s", error_text);
                     if (ImGui::Button("Close")) {
-                        conn_input = { "","",""};
+                        conn_input = { "","","" };
                         error_text[0] = '\0';
                         ImGui::CloseCurrentPopup();
                     }
@@ -195,7 +233,8 @@ int main() {
                     check_conn_input(&conn_input, error_text);
                     if (strlen(error_text)) {
                         ImGui::OpenPopup("ConnctionInputError");
-                    } else {
+                    }
+                    else {
                         mode = Mode::CLIENT;
                         network_manager.startClient(conn_input.host_machine, port);
                     }
@@ -218,11 +257,14 @@ int main() {
                     // Color code messages
                     if (msg.find("error") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-                    } else if (msg.find("received") != std::string::npos) {
+                    }
+                    else if (msg.find("received") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-                    } else if (msg.find("Sent") != std::string::npos) {
+                    }
+                    else if (msg.find("Sent") != std::string::npos) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.5f, 1.0f, 1.0f));
-                    } else {
+                    }
+                    else {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                     }
                     ImGui::TextUnformatted(msg.c_str());
@@ -239,9 +281,7 @@ int main() {
                 // Message input
                 static char message_input[256] = "";
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.8f);
-                if (ImGui::InputTextWithHint("##MessageInput", "Type message here...",
-                    message_input, IM_ARRAYSIZE(message_input),
-                    ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (ImGui::InputTextWithHint("##MessageInput", "Type message here...", message_input, IM_ARRAYSIZE(message_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
                     if (strlen(message_input) > 0) {
                         network_manager.sendMessage(message_input);
                         message_input[0] = '\0';
@@ -261,7 +301,7 @@ int main() {
 
             ImGui::End();
         }
-        
+
         if (show_settings) {
             ImGui::Begin("Settings", &show_settings, ImGuiWindowFlags_AlwaysAutoResize);
             ImGui::Text(("Current Using Port: " + port).c_str());
@@ -280,7 +320,8 @@ int main() {
                 check_port(port_input, error_text);
                 if (strlen(error_text)) {
                     ImGui::OpenPopup("PortError");
-                } else {
+                }
+                else {
                     port = port_input;
                     config["port"] = port;
                     std::ofstream file(CONFIG);
@@ -307,10 +348,10 @@ int main() {
 
                 ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
-                ImGui::BeginChild("##item", 
-                    ImVec2(600.f, ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2 + 8.f), 
+                ImGui::BeginChild("##item",
+                    ImVec2(600.f, ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2 + 8.f),
                     true // Border
-                ); 
+                );
 
                 bool clicked = ImGui::Selectable("##selectable", false, 0, ImGui::GetContentRegionAvail());
 
@@ -318,17 +359,18 @@ int main() {
                 ImGui::SetCursorScreenPos(cursorPos);
 
                 // Draw text content
-                ImGui::Text("%10s",record.conn_name);
+                ImGui::Text("%10s", record.conn_name);
                 ImGui::SameLine();
-                ImGui::Text("%23s",record.host_machine);
+                ImGui::Text("%23s", record.host_machine);
                 ImGui::SameLine();
-                ImGui::Text("%12s",record.port);
+                ImGui::Text("%12s", record.port);
                 ImGui::EndChild();
                 ImGui::PopStyleVar(1);
 
                 if (clicked) {
                     conn_input = record;
                     network_manager.startClient(record.host_machine, record.port);
+					mode = Mode::CLIENT;
                     show_recent_conn = false;
                 }
 
@@ -338,22 +380,18 @@ int main() {
             if (ImGui::Button("Close")) {
                 show_settings = false;
             }
-			ImGui::End();
+            ImGui::End();
         }
 
-        if (show_cli) {
-            if (!cmd.isRunning()) {
-                cmd.start();
-            }
-
+        if (show_cli && state == ConnectionState::CONNECTED && mode == Mode::CLIENT) {
             ImGui::StyleColorsDark();
-			ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
             ImGui::Begin("Command Line Interface", &show_cli);
 
             for (const auto& log : cli_logs) {
                 if (log.length())
                     ImGui::TextWrapped("%s", log.c_str());
-			}
+            }
 
             if (!cmd.busy()) {
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
@@ -361,21 +399,26 @@ int main() {
                 if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
                     std::string command(cli_input);
                     cli_input[0] = '\0';
-                    cmd.sendCommand(command);
+                    // send command to by network manager client
+                    NetworkMessage msg;
+                    msg.type = MessageType::COMMAND;
+                    msg.data.assign(command.begin(), command.end());
+                    network_manager.sendMessage(msg);
                     new_input = true;
                 }
                 ImGui::PopItemWidth();
             }
-            output_vec = cmd.getOutput();
-            if (output_vec.size()) {
-                for (size_t i = 0; i < output_vec.size(); ++i) {
+            // get output from network manager client sent by server
+            if (client_output_vec.size()) {
+                for (size_t i = 0; i < client_output_vec.size(); ++i) {
                     if (new_input) {
-                        cli_logs.back() += output_vec[i].text;
+                        cli_logs.back() += client_output_vec[i];
                         new_input = false;
-                    } else
-                        cli_logs.emplace_back(output_vec[i].text);
+                    }
+                    else
+                        cli_logs.emplace_back(client_output_vec[i]);
                 }
-                output_vec.clear();
+                client_output_vec.clear();
                 if (cli_logs.size() > 200)
                     cli_logs.erase(cli_logs.begin());
                 new_log = true;
@@ -392,21 +435,21 @@ int main() {
             ImGui::StyleColorsLight();
         }
 
-		ImGui::Render();
-		glfwGetFramebufferSize(window, &display_w, &display_h);
-		glViewport(0, 0, display_w, display_h);
-		glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        ImGui::Render();
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-		glfwSwapBuffers(window);
-	}
+        glfwSwapBuffers(window);
+    }
 
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
-	glfwDestroyWindow(window);
-	glfwTerminate();
-	return 0;
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
 }

@@ -12,6 +12,7 @@ BaseConnection::~BaseConnection() {
 void BaseConnection::stop() {
     boost::system::error_code ec;
     m_socket.close(ec);
+    m_accumulated_buffer.clear();
 }
 
 void BaseConnection::close() {
@@ -65,20 +66,35 @@ void BaseConnection::startReading() {
 
 void BaseConnection::handleRead(const boost::system::error_code& error, size_t bytes_transferred) {
     if (!error) {
-        NetworkMessage message;
-        message.type = MessageType(m_read_buffer[0]);
-        uint32_t net_size;
-		std::memcpy(&net_size, m_read_buffer.data() + 1, 4);
-		uint32_t data_size = ntohl(net_size);
-        message.data.assign(m_read_buffer.begin() + 5, m_read_buffer.begin() + 5 + data_size);
+        m_accumulated_buffer.insert(m_accumulated_buffer.end(), m_read_buffer.begin(), m_read_buffer.begin() + bytes_transferred);
 
-        auto processed_msg = preprocessReceive(message);
+        // Process messages from accumulated buffer
+        size_t offset = 0;
+        while (offset + 5 <= m_accumulated_buffer.size()) { // Check enough data for the header (1 byte type + 4 bytes size)
+            uint32_t net_size;
+            std::memcpy(&net_size, m_accumulated_buffer.data() + offset + 1, 4);
+            uint32_t data_size = ntohl(net_size);
+            size_t total_message_size = 1 + 4 + data_size; // type + size + data
 
-        if (m_message_callback) {
-            m_message_callback(processed_msg);
+            if (offset + total_message_size > m_accumulated_buffer.size())  // Not enough data for complete message, wait for more
+                break;
+
+            // Parse the complete message
+            NetworkMessage message;
+            message.type = MessageType(m_accumulated_buffer[offset]);
+            message.data.assign(m_accumulated_buffer.begin() + offset + 5, m_accumulated_buffer.begin() + offset + 5 + data_size);
+            auto processed_msg = preprocessReceive(message);
+
+            if (m_message_callback) 
+                m_message_callback(processed_msg);
+
+            // Move to next message
+            offset += total_message_size;
         }
 
-        onMessageReceived(processed_msg);
+        // Remove processed data from accumulated buffer
+        if (offset > 0) 
+            m_accumulated_buffer.erase(m_accumulated_buffer.begin(), m_accumulated_buffer.begin() + offset);
 
         startReading();
     } else {

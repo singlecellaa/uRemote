@@ -75,7 +75,7 @@ int main() {
 
     bool show_cli = true;
     std::vector<std::string> cli_logs;
-    std::string pwd;
+    bool cmd_busy = false;
     char cli_input[256] = "";
     bool new_input = false;
     std::vector<std::string> client_output_vec;
@@ -92,10 +92,10 @@ int main() {
         if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS))
             show_recent_conn = true;
         glfwPollEvents();
-        auto signals = network_manager.popSignals();
-        for (const auto& signal : signals) {
+        auto network_signals = network_manager.popSignals();
+        for (const auto& signal : network_signals) {
             switch (signal) {
-            case ConnectionState::CONNECTED: {
+            case SignalType::CONNECTED: {
                 recent_conn.push(conn_input);
                 config["recent_conn"] = recent_conn.toJson();
                 std::ofstream file(CONFIG);
@@ -103,13 +103,27 @@ int main() {
                 file.close();
                 break;
             }
-            case ConnectionState::DISCONNECTED:
+            case SignalType::DISCONNECTED:
                 if (cmd.isRunning()) {
                     cmd.stop();
                 }
                 break;
-            case ConnectionState::ERR:
-
+            default:
+                break;
+            }
+        }
+        auto cmd_signals = cmd.popSignals();
+        for (const auto& signal : cmd_signals) {
+            switch (signal) {
+            case SignalType::CMD_BUSY:
+            case SignalType::CMD_IDLE: {
+                NetworkMessage signal_message;
+                signal_message.fromSignal(signal);
+                network_manager.sendMessage(signal_message);
+				std::cout << "Sent signal to network: " << (signal == SignalType::CMD_BUSY ? "CMD_BUSY" : "CMD_IDLE") << std::endl;
+                break;
+            }
+            default:
                 break;
             }
         }
@@ -119,8 +133,8 @@ int main() {
             switch (msg.type) {
             case MessageType::COMMAND:
                 if (mode == Mode::SERVER && cmd.isRunning()) {
+                    std::cout << "Server sent command to cmd: " << msg.toString() << std::endl;
                     cmd.sendCommand(msg.toString());
-					std::cout << "Server received commmand: " << msg.toString() << std::endl;
                 }
                 break;
             case MessageType::TERMIAL_OUTPUT:
@@ -129,7 +143,18 @@ int main() {
 					std::cout << "terminal received output: " << msg.toString() << std::endl;
                 }
                 break;
+            case MessageType::SIGNAL: {
+                SignalType signal = msg.toSignal();
+				std::cout << "received signal from network: " << (signal == SignalType::CMD_BUSY ? "CMD_BUSY" : "CMD_IDLE") << std::endl;
+                if (signal == SignalType::CMD_BUSY)
+                    cmd_busy = true;
+                else if (signal == SignalType::CMD_IDLE)
+                    cmd_busy = false;
+				std::cout << "terminal cmd_busy set to: " << (cmd_busy ? "true" : "false") << std::endl;
+                break;
+            }
             default:
+				std::cout << "unknown message type received from network" << std::endl;
                 break;
             }
         }
@@ -202,14 +227,22 @@ int main() {
                     network_manager.stopAll();
                     mode = Mode::NONE;
                 }
-                if (state == ConnectionState::CONNECTED && mode == Mode::SERVER && cmd.isRunning()) {
+                if (mode == Mode::SERVER && cmd.isRunning()) {
                     //send output by network manager server to client
-                    server_output_vec = cmd.getOutput();
-                    for (const auto& output : server_output_vec) {
-                        NetworkMessage msg;
-                        msg.type = MessageType::TERMIAL_OUTPUT;
-                        msg.data.assign(output.begin(), output.end());
-                        network_manager.sendMessage(msg);
+                    std::vector<std::string> cmd_output = cmd.getOutput();
+                    if (cmd_output.size() > 0) {
+						server_output_vec.insert(server_output_vec.end(), cmd_output.begin(), cmd_output.end());
+						std::cout << "server get " << cmd_output.size() << " outputs from cmd" << std::endl;
+					}
+                    if (state == ConnectionState::CONNECTED) {
+                        for (const auto& output : server_output_vec) {
+                            NetworkMessage msg;
+                            msg.type = MessageType::TERMIAL_OUTPUT;
+                            msg.data.assign(output.begin(), output.end());
+                            std::cout << "Server send output to client: " << output << std::endl;
+                            network_manager.sendMessage(msg);
+                        }
+						server_output_vec.clear();
                     }
                 }
             }
@@ -389,13 +422,21 @@ int main() {
             ImGui::Begin("Command Line Interface", &show_cli);
 
             for (const auto& log : cli_logs) {
-                if (log.length())
-                    ImGui::TextWrapped("%s", log.c_str());
+                if (log.length()) {
+                    // Split log by newlines to handle multiline output properly
+                    std::stringstream ss(log);
+                    std::string line;
+                    while (std::getline(ss, line)) {
+                        if (!line.empty()) {
+                            ImGui::TextWrapped("%s", line.c_str());
+                        }
+                    }
+                }
             }
 
-            if (!cmd.busy()) {
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
+            if (!cmd_busy) {
                 ImGui::SameLine();
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 10);
                 if (ImGui::InputText("##Input", cli_input, IM_ARRAYSIZE(cli_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
                     std::string command(cli_input);
                     cli_input[0] = '\0';

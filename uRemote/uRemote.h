@@ -80,6 +80,14 @@ public:
 	}
 };
 
+enum class SignalType {
+	CONNECTED,
+	DISCONNECTED,
+	CMD_BUSY,
+	CMD_IDLE,
+	NONE
+};
+
 static inline void check_ip(const char* ip_addr, char* conn_err) {
 	// Validate IPv4 format
 	int octets[4];

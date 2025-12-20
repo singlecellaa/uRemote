@@ -13,7 +13,10 @@ void NetworkManager::startServer(const std::string& port) {
     m_server = std::make_shared<Server>(*m_server_io_context, port);
 
     m_server->setConnectionCallback([this](ConnectionState state, const std::string& info) { 
-        pushSignal(state);
+        if (state == ConnectionState::CONNECTED || state == ConnectionState::DISCONNECTED) {
+            SignalType signal = (state == ConnectionState::CONNECTED) ? SignalType::CONNECTED : SignalType::DISCONNECTED;
+            pushSignal(signal);
+        }
         handleConnectionState("Server", state, info);
     });
 
@@ -36,7 +39,10 @@ void NetworkManager::startClient(const std::string& host, const std::string& por
     m_client = std::make_shared<Client>(*m_client_io_context, host, port);
 
     m_client->setConnectionCallback([this](ConnectionState state, const std::string& info) { 
-        pushSignal(state);
+        if (state == ConnectionState::CONNECTED || state == ConnectionState::DISCONNECTED) {
+			SignalType signal = (state == ConnectionState::CONNECTED) ? SignalType::CONNECTED : SignalType::DISCONNECTED;
+            pushSignal(signal);
+        }
         handleConnectionState("Client", state, info);
     });
 
@@ -62,6 +68,8 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
     } else if (message.type == MessageType::TERMIAL_OUTPUT) {
         pushNetworkMessage(message);
 		std::cout << "pushed terminal output message: " << message.toString() << std::endl;
+    } else if (message.type == MessageType::SIGNAL) {
+		pushNetworkMessage(message);
     }
 }
 
@@ -82,14 +90,14 @@ void NetworkManager::stopAll() {
     updateConnectionInfo("Stopped");
 }
 
-void NetworkManager::pushSignal(ConnectionState state) {
+void NetworkManager::pushSignal(SignalType signal) {
     std::lock_guard<std::mutex> lock(m_signal_mutex);
-    m_signal_queue.push_back(state);
+    m_signal_queue.push_back(signal);
 }
 
-std::vector<ConnectionState> NetworkManager::popSignals() {
+std::vector<SignalType> NetworkManager::popSignals() {
     std::lock_guard<std::mutex> lock(m_signal_mutex);
-    std::vector<ConnectionState> signals(m_signal_queue.begin(), m_signal_queue.end());
+    std::vector<SignalType> signals(m_signal_queue.begin(), m_signal_queue.end());
     m_signal_queue.clear();
     return signals;
 }
@@ -110,11 +118,14 @@ void NetworkManager::sendMessage(const std::string& message) {
     if (m_server && m_server->isConnected()) {
         m_server->send(message);
         addLocalMessage("Sent to client: " + message);
+        std::cout << "sent message to client: " << message << std::endl;
     } else if (m_client && m_client->isConnected()) {
         m_client->send(message);
         addLocalMessage("Sent to server: " + message);
+        std::cout << "sent message to server: " << message << std::endl;
     } else {
         addLocalMessage("Not connected - message not sent: " + message);
+        std::cout << "not connected - message not sent: " << message << std::endl;
     }
 }
 

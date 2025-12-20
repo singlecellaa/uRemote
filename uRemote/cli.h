@@ -18,6 +18,8 @@
 #include <termios.h>
 #endif
 
+#include "uRemote.h"
+
 enum class ProcessState {
     NotStarted,
     Running,
@@ -40,14 +42,13 @@ public:
 
     void stop();
 
-    void setOutputCallback();
-
     void setOutputCallback(std::function<void(const std::string&, bool)> callback);
 
     ProcessState getState() const;
 
     bool busy() const;
 
+    std::vector<SignalType> popSignals();
 private:
 #ifdef _WIN32
     HANDLE hChildStdinRd = NULL;
@@ -77,4 +78,9 @@ private:
     void readOutput();
     void readError();
     void cleanup();
+
+    // Thread-safe signal queue
+    std::deque<SignalType> m_signal_queue;
+    std::mutex m_signal_mutex;
+    void pushSignal(SignalType signal);
 };

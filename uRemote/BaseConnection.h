@@ -21,6 +21,7 @@ protected:
     ErrorCallback m_error_callback;
 
     // Buffer for reading
+    std::vector<uint8_t> m_accumulated_buffer;
     std::array<uint8_t, 8192> m_read_buffer;
 
 public:
@@ -52,7 +53,6 @@ protected:
     // Virtual methods for extension points
     virtual void onConnected() {}
     virtual void onDisconnected() {}
-    virtual void onMessageReceived(const NetworkMessage& message) {}
     virtual void onError(const std::string& error_message) {}
 
     // Message processing (can be overridden for encryption, etc.)

@@ -22,6 +22,5 @@ private:
     // Override base callbacks
     void onConnected() override;
     void onDisconnected() override;
-    void onMessageReceived(const NetworkMessage& message) override;
     void onError(const std::string& error_message) override;
 };

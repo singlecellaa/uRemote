@@ -45,7 +45,7 @@ bool ProcessManager::start(const std::string& command) {
 
     std::string cmdLine = "cmd.exe";
     if (!command.empty()) {
-        cmdLine += " /C " + command;
+        cmdLine += " /K " + command;
     }
 
     BOOL bSuccess = CreateProcess(
@@ -79,12 +79,12 @@ bool ProcessManager::start(const std::string& command) {
 }
 
 void ProcessManager::checkMarker(std::string& output) {
-    size_t markerPos1 = output.find(" & echo " + endMarker + "\n");
-    size_t markerPos2 = output.find(endMarker);
     if (expectingCompletion) {
+        size_t markerPos1 = output.find(" & echo " + endMarker);
         if (markerPos1 != std::string::npos)
-            output.erase(markerPos1, (" & echo " + endMarker + "\n").length());
-        else if (markerPos2 != std::string::npos) {
+            output.erase(markerPos1, (" & echo " + endMarker).length());
+        size_t markerPos2 = output.find(endMarker);
+        if (markerPos2 != std::string::npos) {
             size_t markerPos2End = markerPos2 + endMarker.length();
             if (output[markerPos2End] == '\r' && output[markerPos2End + 1] == '\n')
                 output.erase(markerPos2, endMarker.length() + 2);
@@ -98,20 +98,25 @@ void ProcessManager::checkMarker(std::string& output) {
 void ProcessManager::readOutput() {
     constexpr size_t bufferSize = 4096;
     std::array<char, bufferSize> buffer;
-    DWORD bytesRead;
 
     while (!shouldStop) {
-        if (ReadFile(hChildStdoutRd, buffer.data(), bufferSize - 1, &bytesRead, NULL)) {
-            if (bytesRead > 0) {
+        DWORD bytesAvailable = 0;
+        if (PeekNamedPipe(hChildStdoutRd, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0) {
+            DWORD bytesRead;
+            DWORD bytesToRead = (bytesAvailable < bufferSize - 1) ? bytesAvailable : bufferSize - 1;
+            if (ReadFile(hChildStdoutRd, buffer.data(), bytesToRead, &bytesRead, NULL) && bytesRead > 0) {
                 buffer[bytesRead] = '\0';
                 std::string output(buffer.data());
 
-				checkMarker(output);
+                checkMarker(output);
 
                 {
                     std::lock_guard<std::mutex> lock(outputMutex);
                     if (output.length())
                         outputQueue.push({ output, false });
+                    if (expectingCompletion == false)
+						pushSignal(SignalType::CMD_IDLE);
+                    std::cout << "cmd push output: " << output << std::endl;
                 }
 
                 if (outputCallback) {
@@ -119,36 +124,39 @@ void ProcessManager::readOutput() {
                 }
             }
         }
-        else {
-            break;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Avoid busy waiting
     }
 }
 
 void ProcessManager::readError() {
     constexpr size_t bufferSize = 4096;
     std::array<char, bufferSize> buffer;
-    DWORD bytesRead;
 
     while (!shouldStop) {
-        if (ReadFile(hChildStderrRd, buffer.data(), bufferSize - 1, &bytesRead, NULL)) {
-            if (bytesRead > 0) {
+        DWORD bytesAvailable = 0;
+        if (PeekNamedPipe(hChildStderrRd, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0) {
+            DWORD bytesRead;
+            DWORD bytesToRead = (bytesAvailable < bufferSize - 1) ? bytesAvailable : bufferSize - 1;
+            if (ReadFile(hChildStderrRd, buffer.data(), bytesToRead, &bytesRead, NULL) && bytesRead > 0) {
                 buffer[bytesRead] = '\0';
                 std::string output(buffer.data());
 
+                checkMarker(output);
+
                 {
                     std::lock_guard<std::mutex> lock(outputMutex);
-                    outputQueue.push({ output, true });
+                    if (output.length()) {
+                        outputQueue.push({ output, false });
+                        std::cout << "cmd push output" << output << "to queue" << std::endl;
+                    }
                 }
 
                 if (outputCallback) {
-                    outputCallback(output, true);
+                    outputCallback(output, false);
                 }
             }
         }
-        else {
-            break;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Avoid busy waiting
     }
 }
 
@@ -158,24 +166,15 @@ bool ProcessManager::sendCommand(const std::string& command) {
     }
 
 	expectingCompletion = true;
+    pushSignal(SignalType::CMD_BUSY);
+    std::cout << "cmd busy, pushed signal" << std::endl;
 
     std::string cmd = command + " & echo " + endMarker + "\n";
+	std::cout << "cmd received command: " << cmd << std::endl;
     DWORD bytesWritten;
     BOOL success = WriteFile(hChildStdinWr, cmd.c_str(), static_cast<DWORD>(cmd.length()), &bytesWritten, NULL);
 
     return success && (bytesWritten == cmd.length());
-}
-
-std::vector<std::string> ProcessManager::getOutput() {
-    std::lock_guard<std::mutex> lock(outputMutex);
-    std::vector<std::string> result;
-
-    while (!outputQueue.empty()) {
-        result.push_back(outputQueue.front());
-        outputQueue.pop();
-    }
-
-    return result;
 }
 
 bool ProcessManager::isRunning() const {
@@ -207,7 +206,7 @@ void ProcessManager::cleanup() {
             CloseHandle(handle);
             handle = NULL;
         }
-        };
+    };
 
     closeHandle(hChildStdinRd);
     closeHandle(hChildStdinWr);
@@ -352,18 +351,6 @@ bool ProcessManager::sendCommand(const std::string& command) {
     return written == static_cast<ssize_t>(cmd.length());
 }
 
-std::vector<std::string> ProcessManager::getOutput() {
-    std::lock_guard<std::mutex> lock(outputMutex);
-    std::vector<std::string> result;
-
-    while (!outputQueue.empty()) {
-        result.push_back(outputQueue.front());
-        outputQueue.pop();
-    }
-
-    return result;
-}
-
 bool ProcessManager::isRunning() const {
     if (pid > 0) {
         int status;
@@ -397,19 +384,18 @@ void ProcessManager::cleanup() {
 }
 #endif
 
-void ProcessManager::setOutputCallback() {
-    outputCallback = [this](const std::string& output, bool isError) {
-        std::lock_guard<std::mutex> lock(outputMutex);
-        
-        // Split output by lines
-        std::istringstream stream(output);
-        std::string line;
-        while (std::getline(stream, line)) {
-        }
+std::vector<std::string> ProcessManager::getOutput() {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    std::vector<std::string> result;
 
-		
-    };
-
+    while (!outputQueue.empty()) {
+        result.push_back(outputQueue.front());
+        outputQueue.pop();
+    }
+    if (result.size()) {
+        std::cout << "cmd pop " << result.size() << " outputs from queue" << std::endl;
+    }
+    return result;
 }
 
 void ProcessManager::setOutputCallback(std::function<void(const std::string&, bool)> callback) {
@@ -422,4 +408,16 @@ ProcessState ProcessManager::getState() const {
 
 bool ProcessManager::busy() const {
 	return expectingCompletion;
+}
+
+void ProcessManager::pushSignal(SignalType signal) {
+    std::lock_guard<std::mutex> lock(m_signal_mutex);
+    m_signal_queue.push_back(signal);
+}
+
+std::vector<SignalType> ProcessManager::popSignals() {
+    std::lock_guard<std::mutex> lock(m_signal_mutex);
+    std::vector<SignalType> signals(m_signal_queue.begin(), m_signal_queue.end());
+    m_signal_queue.clear();
+    return signals;
 }

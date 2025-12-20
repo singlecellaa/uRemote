@@ -77,10 +77,6 @@ void Server::onDisconnected() {
     }
 }
 
-void Server::onMessageReceived(const NetworkMessage& message) {
-    std::cout << "Server received: " << message.toString() << std::endl;
-}
-
 void Server::onError(const std::string& error_message) {
     std::cerr << "Server error: " << error_message << std::endl;
 }

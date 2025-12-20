@@ -22,6 +22,8 @@
 #include <unistd.h>
 #endif
 
+#include "uRemote.h"
+
 using namespace boost::asio;
 using namespace boost::asio::ip;
 
@@ -53,6 +55,7 @@ enum class MessageType {
     TEXT,
     COMMAND,
     TERMIAL_OUTPUT,
+    SIGNAL,
     BINARY
 };
 
@@ -62,6 +65,14 @@ struct NetworkMessage {
     std::vector<uint8_t> data;
     std::string toString() const {
         return std::string(data.begin(), data.end());
+    }
+    void fromSignal(SignalType signal) {
+		type = MessageType::SIGNAL;
+        data.clear();
+        data.push_back(static_cast<uint8_t>(signal));
+    }
+    SignalType toSignal() const {
+		return static_cast<SignalType>(data.empty() ? 0 : data[0]);
     }
     std::vector<uint8_t> serialize() const {
         std::vector<uint8_t> buffer;
@@ -99,7 +110,7 @@ private:
     std::mutex m_received_messages_mutex;
 
     // Thread-safe signal queue
-    std::deque<ConnectionState> m_signal_queue;
+    std::deque<SignalType> m_signal_queue;
     std::mutex m_signal_mutex;
 
     // Thread-safe event queue
@@ -122,8 +133,8 @@ public:
 
     void stopAll();
 
-    void pushSignal(ConnectionState state);
-    std::vector<ConnectionState> popSignals();
+    void pushSignal(SignalType signal);
+    std::vector<SignalType> popSignals();
 
     void pushNetworkMessage(const NetworkMessage& msg);
     std::vector<NetworkMessage> popNetworkMessages();

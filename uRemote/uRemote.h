@@ -7,6 +7,8 @@
 #include <fstream>
 #include <cstring>
 #include <nlohmann/json.hpp>
+#include <filesystem>
+#include <chrono>
 
 #define CONFIG "config.json"
 
@@ -18,6 +20,58 @@ struct ConnInputForm
 	char conn_name[16];
 	char host_machine[16];
 	char port[6];
+};
+
+struct FileInfo {
+    std::string name;
+    bool isDirectory;
+    size_t size;
+    std::string lastModified;
+    
+    json toJson() const {
+        json j;
+        j["name"] = name;
+        j["isDirectory"] = isDirectory;
+        j["size"] = size;
+        j["lastModified"] = lastModified;
+        return j;
+    }
+    
+    static FileInfo fromJson(const json& j) {
+        FileInfo fi;
+        fi.name = j.value("name", "");
+        fi.isDirectory = j.value("isDirectory", false);
+        fi.size = j.value("size", 0);
+        fi.lastModified = j.value("lastModified", "");
+        return fi;
+    }
+};
+
+struct DirectoryListing {
+    std::string path;
+    std::vector<FileInfo> files;
+    
+    json toJson() const {
+        json j;
+        j["path"] = path;
+        json filesJson = json::array();
+        for (const auto& file : files) {
+            filesJson.push_back(file.toJson());
+        }
+        j["files"] = filesJson;
+        return j;
+    }
+    
+    static DirectoryListing fromJson(const json& j) {
+        DirectoryListing dl;
+        dl.path = j.value("path", "");
+        if (j.contains("files") && j["files"].is_array()) {
+            for (const auto& fileJson : j["files"]) {
+                dl.files.push_back(FileInfo::fromJson(fileJson));
+            }
+        }
+        return dl;
+    }
 };
 
 typedef struct ConnInputForm ConnRecord;
@@ -85,6 +139,8 @@ enum class SignalType {
 	DISCONNECTED,
 	CMD_BUSY,
 	CMD_IDLE,
+	FILESYSTEM_REQUEST,
+	FILESYSTEM_RESPONSE,
 	NONE
 };
 
@@ -161,4 +217,67 @@ static inline void check_conn_input(ConnInputForm* input_form, char* conn_err) {
 			check_port(input_form->port, conn_err);
 		}
 	}
+}
+
+static DirectoryListing getDirectoryListing(const std::string& path) {
+    DirectoryListing listing;
+    listing.path = path;
+    
+    try {
+        std::filesystem::path dirPath(path.empty() ? "." : path);
+        
+        // If path is empty, use current directory
+        if (path.empty()) {
+            dirPath = std::filesystem::current_path();
+            listing.path = dirPath.string();
+        }
+        
+        // Check if directory exists
+        if (!std::filesystem::exists(dirPath) || !std::filesystem::is_directory(dirPath)) {
+            return listing; // Return empty listing
+        }
+        
+        for (const auto& entry : std::filesystem::directory_iterator(dirPath)) {
+            FileInfo fileInfo;
+            fileInfo.name = entry.path().filename().string();
+            fileInfo.isDirectory = entry.is_directory();
+            
+            if (!fileInfo.isDirectory) {
+                try {
+                    fileInfo.size = entry.file_size();
+                } catch (...) {
+                    fileInfo.size = 0;
+                }
+            } else {
+                fileInfo.size = 0;
+            }
+            
+            try {
+                auto lastWriteTime = entry.last_write_time();
+                auto timeT = std::chrono::system_clock::to_time_t(std::chrono::clock_cast<std::chrono::system_clock>(lastWriteTime));
+                char timeStr[20];
+                std::strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", std::localtime(&timeT));
+                fileInfo.lastModified = timeStr;
+            } catch (...) {
+                fileInfo.lastModified = "Unknown";
+            }
+            
+            listing.files.push_back(fileInfo);
+        }
+        
+        // Sort: directories first, then files alphabetically
+        std::sort(listing.files.begin(), listing.files.end(), 
+            [](const FileInfo& a, const FileInfo& b) {
+                if (a.isDirectory != b.isDirectory) {
+                    return a.isDirectory > b.isDirectory;
+                }
+                return a.name < b.name;
+            });
+            
+    } catch (const std::exception& e) {
+        // Return empty listing on error
+        std::cerr << "Error listing directory: " << e.what() << std::endl;
+    }
+    
+    return listing;
 }

@@ -82,6 +82,11 @@ int main() {
     bool new_log = false;
     bool scroll = false;
 
+    // File Explorer variables
+    bool show_file_explorer = true;
+    std::string current_path = "";
+    DirectoryListing current_directory;
+
     while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
@@ -101,6 +106,12 @@ int main() {
                 std::ofstream file(CONFIG);
                 file << config.dump(4);
                 file.close();
+                // Request initial directory listing for file explorer
+                if (mode == Mode::CLIENT) {
+                    NetworkMessage request;
+                    request.fromFilesystemRequest();
+                    network_manager.sendMessage(request);
+                }
                 break;
             }
             case SignalType::DISCONNECTED:
@@ -153,6 +164,25 @@ int main() {
 				std::cout << "terminal cmd_busy set to: " << (cmd_busy ? "true" : "false") << std::endl;
                 break;
             }
+            case MessageType::FILESYSTEM_REQUEST:
+                if (mode == Mode::SERVER) {
+                    std::string requestedPath = msg.toFilesystemRequest();
+                    if (requestedPath.empty()) 
+                        requestedPath = std::getenv("USERPROFILE");
+                    std::cout << "Server received filesystem request for path: " << requestedPath << std::endl;
+                    DirectoryListing listing = getDirectoryListing(requestedPath);
+                    NetworkMessage response;
+                    response.fromDirectoryListing(listing);
+                    network_manager.sendMessage(response);
+                }
+                break;
+            case MessageType::FILESYSTEM_RESPONSE:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    current_directory = msg.toDirectoryListing();
+                    current_path = current_directory.path;
+                    std::cout << "Client received filesystem response for path: " << current_path << " with " << current_directory.files.size() << " items" << std::endl;
+                }
+                break;
             default:
 				std::cout << "unknown message type received from network" << std::endl;
                 break;
@@ -474,6 +504,95 @@ int main() {
             }
             ImGui::End();
             ImGui::StyleColorsLight();
+        }
+
+        // File Explorer Panel
+        if (show_file_explorer && mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+            ImGui::Begin("File Explorer", &show_file_explorer);
+            
+            // Current path display and navigation
+            ImGui::Text("Current Path: %s", current_path.c_str());
+            ImGui::Separator();
+            
+            // Navigation buttons
+            if (ImGui::Button("Up")) {
+                std::filesystem::path p(current_path);
+                if (p.has_parent_path()) {
+                    std::string parentPath = p.parent_path().string();
+                    NetworkMessage request;
+                    request.fromFilesystemRequest(parentPath);
+                    network_manager.sendMessage(request);
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Refresh")) {
+                NetworkMessage request;
+                request.fromFilesystemRequest(current_path);
+                network_manager.sendMessage(request);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Root")) {
+                NetworkMessage request;
+                request.fromFilesystemRequest("");
+                network_manager.sendMessage(request);
+            }
+            
+            ImGui::Separator();
+            
+            // File list
+            if (ImGui::BeginChild("FileList", ImVec2(0, 0), true)) {
+                for (const auto& file : current_directory.files) {
+                    bool isSelected = false;
+                    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    
+                    if (file.isDirectory) {
+                        flags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.6f, 1.0f, 1.0f)); // Blue for directories
+                    }
+                    
+                    bool nodeOpen = ImGui::TreeNodeEx(file.name.c_str(), flags);
+                    
+                    if (file.isDirectory) {
+                        ImGui::PopStyleColor();
+                    }
+                    
+                    // Handle double-click to navigate into directories
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0) && file.isDirectory) {
+                        std::filesystem::path newPath = std::filesystem::path(current_path) / file.name;
+                        NetworkMessage request;
+                        request.fromFilesystemRequest(newPath.string());
+                        network_manager.sendMessage(request);
+                    }
+                    
+                    // Context menu
+                    if (ImGui::BeginPopupContextItem()) {
+                        if (ImGui::MenuItem("Open")) {
+                            if (file.isDirectory) {
+                                std::filesystem::path newPath = std::filesystem::path(current_path) / file.name;
+                                NetworkMessage request;
+                                request.fromFilesystemRequest(newPath.string());
+                                network_manager.sendMessage(request);
+                            }
+                        }
+                        ImGui::EndPopup();
+                    }
+                    
+                    // Show file info in tooltip
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("Name: %s", file.name.c_str());
+                        ImGui::Text("Type: %s", file.isDirectory ? "Directory" : "File");
+                        if (!file.isDirectory) {
+                            ImGui::Text("Size: %zu bytes", file.size);
+                        }
+                        ImGui::Text("Modified: %s", file.lastModified.c_str());
+                        ImGui::EndTooltip();
+                    }
+                }
+            }
+            ImGui::EndChild();
+            
+            ImGui::End();
         }
 
         ImGui::Render();

@@ -45,18 +45,14 @@ enum class Mode {
     NONE
 };
 
-struct ConnectionEvent {
-    ConnectionState type;
-    std::string message;
-    std::chrono::system_clock::time_point timestamp;
-};
-
 enum class MessageType {
     TEXT,
     COMMAND,
     TERMIAL_OUTPUT,
     SIGNAL,
-    BINARY
+    BINARY,
+    FILESYSTEM_REQUEST,
+    FILESYSTEM_RESPONSE
 };
 
 // Message structure
@@ -73,6 +69,20 @@ struct NetworkMessage {
     }
     SignalType toSignal() const {
 		return static_cast<SignalType>(data.empty() ? 0 : data[0]);
+    }
+    void fromDirectoryListing(const DirectoryListing& listing) {
+        type = MessageType::FILESYSTEM_RESPONSE;
+        data = json::to_bson(listing.toJson());
+    }
+    DirectoryListing toDirectoryListing() const {
+        return DirectoryListing::fromJson(json::from_bson(data));
+    }
+    void fromFilesystemRequest(const std::string& path = "") {
+        type = MessageType::FILESYSTEM_REQUEST;
+        data.assign(path.begin(), path.end());
+    }
+    std::string toFilesystemRequest() const {
+        return std::string(data.begin(), data.end());
     }
     std::vector<uint8_t> serialize() const {
         std::vector<uint8_t> buffer;
@@ -163,17 +173,17 @@ static inline std::string getLocalConnectedIP() {
     std::string localIP;
 
 #ifdef _WIN32
-    // Windows: Ê¹ÓÃ GetAdapterAddresses API
+    // Windows: ä½¿ç”¨ GetAdapterAddresses API
     ULONG bufferSize = 150000;
     PIP_ADAPTER_ADDRESSES pAddresses = nullptr;
     DWORD result = ERROR_BUFFER_OVERFLOW;
 
-    // ÉêÇë×ã¹»ÄÚ´æÀ´´æ´¢ÊÊÅäÆ÷ÐÅÏ¢
+    // ç”³è¯·è¶³å¤Ÿå†…å­˜æ¥å­˜å‚¨é€‚é…å™¨ä¿¡æ¯
     do {
         pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(bufferSize);
         if (pAddresses == nullptr) return "";
 
-        // µ÷ÓÃ GetAdapterAddresses£¬ÇëÇó°üº¬Íø¹ØÐÅÏ¢
+        // è°ƒç”¨ GetAdapterAddressesï¼Œè¯·æ±‚åŒ…å«ç½‘å…³ä¿¡æ¯
         result = GetAdaptersAddresses(
             AF_UNSPEC,
             GAA_FLAG_INCLUDE_GATEWAYS | GAA_FLAG_INCLUDE_ALL_INTERFACES,
@@ -192,12 +202,12 @@ static inline std::string getLocalConnectedIP() {
         }
     } while (result == ERROR_BUFFER_OVERFLOW);
 
-    // ±éÀúÊÊÅäÆ÷Á´±í£¬Ñ°ÕÒµÚÒ»¸ö¾ßÓÐIPv4Ä¬ÈÏÍø¹ØµÄÊÊÅäÆ÷£¬²¢»ñÈ¡ÆäIPv4µØÖ·
+    // éåŽ†é€‚é…å™¨é“¾è¡¨ï¼Œå¯»æ‰¾ç¬¬ä¸€ä¸ªå…·æœ‰IPv4é»˜è®¤ç½‘å…³çš„é€‚é…å™¨ï¼Œå¹¶èŽ·å–å…¶IPv4åœ°å€
     PIP_ADAPTER_ADDRESSES pCurrAddress = pAddresses;
     while (pCurrAddress) {
-        // ¼ì²éÊÊÅäÆ÷ÊÇ·ñÒÑÁ¬½ÓÇÒÔËÐÐÖÐ
+        // æ£€æŸ¥é€‚é…å™¨æ˜¯å¦å·²è¿žæŽ¥ä¸”è¿è¡Œä¸­
         if (pCurrAddress->OperStatus == IfOperStatusUp) {
-            // ¼ì²éÊÇ·ñÓÐIPv4Ä¬ÈÏÍø¹Ø
+            // æ£€æŸ¥æ˜¯å¦æœ‰IPv4é»˜è®¤ç½‘å…³
             bool hasIPv4Gateway = false;
             PIP_ADAPTER_GATEWAY_ADDRESS_LH pGateway = pCurrAddress->FirstGatewayAddress;
             while (pGateway) {
@@ -208,7 +218,7 @@ static inline std::string getLocalConnectedIP() {
                 pGateway = pGateway->Next;
             }
 
-            // Èç¹ûÓÐIPv4Ä¬ÈÏÍø¹Ø£¬Ôò»ñÈ¡¸ÃÊÊÅäÆ÷µÄIPv4µØÖ·
+            // å¦‚æžœæœ‰IPv4é»˜è®¤ç½‘å…³ï¼Œåˆ™èŽ·å–è¯¥é€‚é…å™¨çš„IPv4åœ°å€
             if (hasIPv4Gateway) {
                 PIP_ADAPTER_UNICAST_ADDRESS_LH pUnicast = pCurrAddress->FirstUnicastAddress;
                 while (pUnicast) {
@@ -221,7 +231,7 @@ static inline std::string getLocalConnectedIP() {
                 }
 
                 if (!localIP.empty()) {
-                    break; // ÕÒµ½Á¬½ÓÍøÂçµÄIPµØÖ·£¬ÍË³öÑ­»·
+                    break; // æ‰¾åˆ°è¿žæŽ¥ç½‘ç»œçš„IPåœ°å€ï¼Œé€€å‡ºå¾ªçŽ¯
                 }
             }
         }
@@ -231,14 +241,14 @@ static inline std::string getLocalConnectedIP() {
     if (pAddresses) free(pAddresses);
 
 #else
-    // Linux: Í¨¹ý½âÎö /proc/net/route ÎÄ¼þ»ñÈ¡Ä¬ÈÏÍø¹Ø½Ó¿Ú£¬È»ºó»ñÈ¡¸Ã½Ó¿ÚµÄIPµØÖ·
+    // Linux: é€šè¿‡è§£æž /proc/net/route æ–‡ä»¶èŽ·å–é»˜è®¤ç½‘å…³æŽ¥å£ï¼Œç„¶åŽèŽ·å–è¯¥æŽ¥å£çš„IPåœ°å€
     std::string interfaceName;
 
-    // µÚÒ»²½£º´Ó/proc/net/route»ñÈ¡¾ßÓÐÄ¬ÈÏÍø¹ØµÄ½Ó¿ÚÃû
+    // ç¬¬ä¸€æ­¥ï¼šä»Ž/proc/net/routeèŽ·å–å…·æœ‰é»˜è®¤ç½‘å…³çš„æŽ¥å£å
     std::ifstream routeFile("/proc/net/route");
     std::string line;
 
-    // Ìø¹ýµÚÒ»ÐÐ±êÌâ
+    // è·³è¿‡ç¬¬ä¸€è¡Œæ ‡é¢˜
     std::getline(routeFile, line);
 
     while (std::getline(routeFile, line)) {
@@ -247,7 +257,7 @@ static inline std::string getLocalConnectedIP() {
 
         if (sscanf(line.c_str(), "%255s %lx %lx %*s %*s %*s %*s %lx",
             iface, &destination, &gateway, &flags) == 4) {
-            // ¼ì²éÊÇ·ñÊÇÄ¬ÈÏÂ·ÓÉ£¨Ä¿±êµØÖ·Îª0£©²¢ÇÒÍø¹Ø²»Îª0
+            // æ£€æŸ¥æ˜¯å¦æ˜¯é»˜è®¤è·¯ç”±ï¼ˆç›®æ ‡åœ°å€ä¸º0ï¼‰å¹¶ä¸”ç½‘å…³ä¸ä¸º0
             if (destination == 0 && gateway != 0) {
                 interfaceName = iface;
                 break;
@@ -256,7 +266,7 @@ static inline std::string getLocalConnectedIP() {
     }
     routeFile.close();
 
-    // µÚ¶þ²½£ºÍ¨¹ýgetifaddrs»ñÈ¡Ö¸¶¨½Ó¿ÚµÄIPv4µØÖ·
+    // ç¬¬äºŒæ­¥ï¼šé€šè¿‡getifaddrsèŽ·å–æŒ‡å®šæŽ¥å£çš„IPv4åœ°å€
     if (!interfaceName.empty()) {
         struct ifaddrs* ifaddr, * ifa;
 
@@ -264,13 +274,13 @@ static inline std::string getLocalConnectedIP() {
             return "";
         }
 
-        // ±éÀúËùÓÐ½Ó¿Ú
+        // éåŽ†æ‰€æœ‰æŽ¥å£
         for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
             if (ifa->ifa_addr == nullptr) {
                 continue;
             }
 
-            // ¼ì²é½Ó¿ÚÃûÊÇ·ñÆ¥Åä²¢ÇÒÊÇIPv4µØÖ·
+            // æ£€æŸ¥æŽ¥å£åæ˜¯å¦åŒ¹é…å¹¶ä¸”æ˜¯IPv4åœ°å€
             if (interfaceName == ifa->ifa_name && ifa->ifa_addr->sa_family == AF_INET) {
                 struct sockaddr_in* sa = (struct sockaddr_in*)ifa->ifa_addr;
                 char ipStr[INET_ADDRSTRLEN];
@@ -283,7 +293,7 @@ static inline std::string getLocalConnectedIP() {
         freeifaddrs(ifaddr);
     }
 
-    // ±¸Ñ¡·½°¸£ºÈç¹ûÉÏÊö·½·¨Ê§°Ü£¬³¢ÊÔÊ¹ÓÃioctl»ñÈ¡IP
+    // å¤‡é€‰æ–¹æ¡ˆï¼šå¦‚æžœä¸Šè¿°æ–¹æ³•å¤±è´¥ï¼Œå°è¯•ä½¿ç”¨ioctlèŽ·å–IP
     if (localIP.empty() && !interfaceName.empty()) {
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd >= 0) {

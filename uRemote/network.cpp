@@ -70,6 +70,12 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
 		std::cout << "pushed terminal output message: " << message.toString() << std::endl;
     } else if (message.type == MessageType::SIGNAL) {
 		pushNetworkMessage(message);
+    } else if (message.type == MessageType::FILESYSTEM_REQUEST) {
+        pushNetworkMessage(message);
+		std::cout << "pushed filesystem request message: " << message.toFilesystemRequest() << std::endl;
+    } else if (message.type == MessageType::FILESYSTEM_RESPONSE) {
+        pushNetworkMessage(message);
+		std::cout << "pushed filesystem response message" << std::endl;
     }
 }
 

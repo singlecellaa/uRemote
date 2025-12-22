@@ -9,9 +9,7 @@
 #include <condition_variable>
 #include <iostream>
 
-// To get the ip of default gateway
 #ifdef _WIN32
-#include <winsock2.h>
 #include <iphlpapi.h>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
@@ -57,6 +55,8 @@ enum class MessageType {
     FILE_CONTENT_RESPONSE,
     FILE_DOWNLOAD_REQUEST,
     FILE_DOWNLOAD_RESPONSE,
+    SCREENSHOT_REQUEST,
+    SCREENSHOT_RESPONSE,
     ERR
 };
 
@@ -116,6 +116,17 @@ struct NetworkMessage {
     }
     FileResponse toFileDownloadResponse() const {
         return FileResponse::fromJson(json::from_bson(data));
+    }
+    void fromScreenshotRequest() {
+        type = MessageType::SCREENSHOT_REQUEST;
+        data.clear();
+    }
+    void fromScreenshotResponse(const ScreenshotResponse& response) {
+        type = MessageType::SCREENSHOT_RESPONSE;
+        data = json::to_bson(response.toJson());
+    }
+    ScreenshotResponse toScreenshotResponse() const {
+        return ScreenshotResponse::fromJson(json::from_bson(data));
     }
     void fromBinary(const std::vector<uint8_t>& binaryData) {
         type = MessageType::BINARY;

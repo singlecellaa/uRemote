@@ -113,6 +113,14 @@ int main() {
     std::string file_viewer_title = "";
     std::string file_viewer_content = "";
 
+    // Remote Desktop variables
+    bool show_remote_desktop = true;
+    std::vector<uint8_t> screenshot_buffer;
+    int screenshot_width = 0;
+    int screenshot_height = 0;
+    GLuint screenshot_texture = 0;
+    bool screenshot_updated = false;
+
     while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
@@ -283,6 +291,29 @@ int main() {
                     filesystem_error_msg = msg.toError();
                     show_filesystem_error = true;
                     std::cout << "Client received error: " << filesystem_error_msg << std::endl;
+                }
+                break;
+            case MessageType::SCREENSHOT_REQUEST:
+                if (mode == Mode::SERVER) {
+                    std::cout << "Server received screenshot request" << std::endl;
+                    auto [success, response] = captureScreenshot();
+                    NetworkMessage msg;
+                    if (success) {
+                        msg.fromScreenshotResponse(response);
+                    } else {
+                        msg.fromError("Failed to capture screenshot");
+                    }
+                    network_manager.sendMessage(msg);
+                }
+                break;
+            case MessageType::SCREENSHOT_RESPONSE:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    ScreenshotResponse response = msg.toScreenshotResponse();
+                    screenshot_buffer = response.data;
+                    screenshot_width = response.width;
+                    screenshot_height = response.height;
+                    screenshot_updated = true;
+                    std::cout << "Client received screenshot response with " << screenshot_buffer.size() << " bytes, " << screenshot_width << "x" << screenshot_height << std::endl;
                 }
                 break;
             default:
@@ -770,6 +801,32 @@ int main() {
         if (show_file_viewer) {
             ImGui::Begin(file_viewer_title.c_str(), &show_file_viewer);
             ImGui::TextWrapped("%s", file_viewer_content.c_str());
+            ImGui::End();
+        }
+
+        if (show_remote_desktop && mode == Mode::CLIENT) {
+            ImGui::Begin("Remote Desktop", &show_remote_desktop);
+            if (ImGui::Button("Request Screenshot")) {
+                NetworkMessage request;
+                request.fromScreenshotRequest();
+                network_manager.sendMessage(request);
+            }
+            if (!screenshot_buffer.empty()) {
+                if (screenshot_updated) {
+                    if (screenshot_texture != 0) {
+                        glDeleteTextures(1, &screenshot_texture);
+                    }
+                    glGenTextures(1, &screenshot_texture);
+                    glBindTexture(GL_TEXTURE_2D, screenshot_texture);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screenshot_width, screenshot_height, 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, screenshot_buffer.data());
+                    screenshot_updated = true;
+                }
+                ImGui::Image((ImTextureID)(intptr_t)screenshot_texture, ImVec2(screenshot_width * 0.5f, screenshot_height * 0.5f));
+            } else {
+                ImGui::Text("No screenshot received yet.");
+            }
             ImGui::End();
         }
 

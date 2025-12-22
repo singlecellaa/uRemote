@@ -91,7 +91,13 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
     } else if (message.type == MessageType::FILE_DOWNLOAD_RESPONSE) {
         pushNetworkMessage(message);
         std::cout << "pushed file download response message" << std::endl;
-    } 
+    } else if (message.type == MessageType::SCREENSHOT_REQUEST) {
+        pushNetworkMessage(message);
+        std::cout << "pushed screenshot request message" << std::endl;
+    } else if (message.type == MessageType::SCREENSHOT_RESPONSE) {
+        pushNetworkMessage(message);
+        std::cout << "pushed screenshot response message" << std::endl;
+    }
 }
 
 void NetworkManager::stopAll() {

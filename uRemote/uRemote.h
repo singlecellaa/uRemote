@@ -9,6 +9,8 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <chrono>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 #define CONFIG "config.json"
 
@@ -90,6 +92,28 @@ struct FileResponse {
         fr.filename = j.value("filename", "");
         fr.content = j["content"].get_binary();
         return fr;
+    }
+};
+
+struct ScreenshotResponse {
+    int width;
+    int height;
+    std::vector<uint8_t> data;
+    
+    json toJson() const {
+        json j;
+        j["width"] = width;
+        j["height"] = height;
+        j["data"] = json::binary(data);
+        return j;
+    }
+    
+    static ScreenshotResponse fromJson(const json& j) {
+        ScreenshotResponse sr;
+        sr.width = j.value("width", 0);
+        sr.height = j.value("height", 0);
+        sr.data = j["data"].get_binary();
+        return sr;
     }
 };
 
@@ -333,4 +357,71 @@ static bool isTextFile(const std::string& filename) {
         if (ext == e) return true;
     }
     return false;
+}
+
+static std::pair<bool, ScreenshotResponse> captureScreenshot() {
+    // Get the device context of the screen
+    HDC hScreenDC = GetDC(NULL);
+    if (!hScreenDC) return {false, {}};
+
+    // Get screen dimensions
+    int width = GetSystemMetrics(SM_CXSCREEN);
+    int height = GetSystemMetrics(SM_CYSCREEN);
+
+    // Create a compatible DC which is used in a BitBlt from the window DC
+    HDC hMemoryDC = CreateCompatibleDC(hScreenDC);
+    if (!hMemoryDC) {
+        ReleaseDC(NULL, hScreenDC);
+        return {false, {}};
+    }
+
+    // Create a compatible bitmap from the Window DC
+    HBITMAP hBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
+    if (!hBitmap) {
+        DeleteDC(hMemoryDC);
+        ReleaseDC(NULL, hScreenDC);
+        return {false, {}};
+    }
+
+    // Select the compatible bitmap into the compatible memory DC
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
+
+    // Bit block transfer into our compatible memory DC
+    if (!BitBlt(hMemoryDC, 0, 0, width, height, hScreenDC, 0, 0, SRCCOPY)) {
+        SelectObject(hMemoryDC, hOldBitmap);
+        DeleteObject(hBitmap);
+        DeleteDC(hMemoryDC);
+        ReleaseDC(NULL, hScreenDC);
+        return {false, {}};
+    }
+
+    // Get bitmap info
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height; // Negative for top-down
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    std::vector<uint8_t> buffer(width * height * 4);
+    if (!GetDIBits(hMemoryDC, hBitmap, 0, height, buffer.data(), &bmi, DIB_RGB_COLORS)) {
+        SelectObject(hMemoryDC, hOldBitmap);
+        DeleteObject(hBitmap);
+        DeleteDC(hMemoryDC);
+        ReleaseDC(NULL, hScreenDC);
+        return {false, {}};
+    }
+
+    // Clean up
+    SelectObject(hMemoryDC, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hMemoryDC);
+    ReleaseDC(NULL, hScreenDC);
+
+    ScreenshotResponse sr;
+    sr.width = width;
+    sr.height = height;
+    sr.data = buffer;
+    return {true, sr};
 }

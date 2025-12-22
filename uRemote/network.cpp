@@ -79,7 +79,19 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
     } else if (message.type == MessageType::ERR) {
         pushNetworkMessage(message);
 		std::cout << "pushed error message: " << message.toError() << std::endl;
-    }
+    } else if (message.type == MessageType::FILE_CONTENT_REQUEST) {
+        pushNetworkMessage(message);
+		std::cout << "pushed file content request message: " << message.toFileContentRequest() << std::endl;
+    } else if (message.type == MessageType::FILE_CONTENT_RESPONSE) {
+        pushNetworkMessage(message);
+        std::cout << "pushed file content response message" << std::endl;
+    } else if (message.type == MessageType::FILE_DOWNLOAD_REQUEST) {
+        pushNetworkMessage(message);
+        std::cout << "pushed file download request message: " << message.toFileDownloadRequest() << std::endl;
+    } else if (message.type == MessageType::FILE_DOWNLOAD_RESPONSE) {
+        pushNetworkMessage(message);
+        std::cout << "pushed file download response message" << std::endl;
+    } 
 }
 
 void NetworkManager::stopAll() {

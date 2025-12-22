@@ -74,6 +74,25 @@ struct DirectoryListing {
     }
 };
 
+struct FileResponse {
+    std::string filename;
+    std::vector<uint8_t> content;
+    
+    json toJson() const {
+        json j;
+        j["filename"] = filename;
+        j["content"] = json::binary(content);
+        return j;
+    }
+    
+    static FileResponse fromJson(const json& j) {
+        FileResponse fr;
+        fr.filename = j.value("filename", "");
+        fr.content = j["content"].get_binary();
+        return fr;
+    }
+};
+
 typedef struct ConnInputForm ConnRecord;
 
 class ConnQueue {
@@ -290,4 +309,28 @@ static std::pair<bool, DirectoryListing> getDirectoryListing(const std::string& 
     }
     
     return {true, listing};
+}
+
+static std::pair<bool, std::vector<uint8_t>> readFileContent(const std::string& path) {
+    try {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) {
+            return {false, {}};
+        }
+        std::vector<uint8_t> content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        return {true, content};
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading file: " << e.what() << std::endl;
+        return {false, {}};
+    }
+}
+
+static bool isTextFile(const std::string& filename) {
+    std::string ext = std::filesystem::path(filename).extension().string();
+    // Common text file extensions
+    std::vector<std::string> textExtensions = {".txt", ".c", ".cpp", ".h", ".py", ".js", ".html", ".css", ".json", ".xml", ".md", ".log", ".ini", ".cfg", ".conf"};
+    for (auto& e : textExtensions) {
+        if (ext == e) return true;
+    }
+    return false;
 }

@@ -108,6 +108,11 @@ int main() {
     bool show_filesystem_error = false;
     std::string filesystem_error_msg;
 
+    // File Viewer variables
+    bool show_file_viewer = false;
+    std::string file_viewer_title = "";
+    std::string file_viewer_content = "";
+
     while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
         running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
@@ -201,12 +206,76 @@ int main() {
                     network_manager.sendMessage(response);
                 }
                 break;
+            case MessageType::FILE_CONTENT_REQUEST:
+                if (mode == Mode::SERVER) {
+                    std::string requestedPath = msg.toFileContentRequest();
+                    std::cout << "Server received file content request for path: " << requestedPath << std::endl;
+                    auto [success, content] = readFileContent(requestedPath);
+                    NetworkMessage response;
+                    if (success) {
+                        FileResponse fr;
+                        fr.filename = std::filesystem::path(requestedPath).filename().string();
+                        fr.content = content;
+                        response.fromFileContentResponse(fr);
+                    } else {
+                        response.fromError("Failed to read file: " + requestedPath);
+                    }
+                    network_manager.sendMessage(response);
+                }
+                break;
+            case MessageType::FILE_DOWNLOAD_REQUEST:
+                if (mode == Mode::SERVER) {
+                    std::string requestedPath = msg.toFileDownloadRequest();
+                    std::cout << "Server received file download request for path: " << requestedPath << std::endl;
+                    auto [success, content] = readFileContent(requestedPath);
+                    NetworkMessage response;
+                    if (success) {
+                        FileResponse fr;
+                        fr.filename = std::filesystem::path(requestedPath).filename().string();
+                        fr.content = content;
+                        response.fromFileDownloadResponse(fr);
+                    } else {
+                        response.fromError("Failed to read file: " + requestedPath);
+                    }
+                    network_manager.sendMessage(response);
+                }
+                break;
             case MessageType::FILESYSTEM_RESPONSE:
                 if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
                     current_directory = msg.toDirectoryListing();
                     current_path = current_directory.path;
                     path_input[0] = '\0'; // Clear the input field
                     std::cout << "Client received filesystem response for path: " << current_path << " with " << current_directory.files.size() << " items" << std::endl;
+                }
+                break;
+            case MessageType::FILE_CONTENT_RESPONSE:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    FileResponse response = msg.toFileContentResponse();
+                    file_viewer_content = std::string(response.content.begin(), response.content.end());
+                    file_viewer_title = "File Viewer - " + response.filename;
+                    show_file_viewer = true;
+                    std::cout << "Client received file content response for " << response.filename << " with " << response.content.size() << " bytes" << std::endl;
+                }
+                break;
+            case MessageType::FILE_DOWNLOAD_RESPONSE:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    FileResponse response = msg.toFileDownloadResponse();
+                    // Save to download path
+                    std::filesystem::path downloadDir(download_path);
+                    if (!std::filesystem::exists(downloadDir)) {
+                        std::filesystem::create_directories(downloadDir);
+                    }
+                    std::filesystem::path filePath = downloadDir / response.filename;
+                    std::ofstream outFile(filePath, std::ios::binary);
+                    if (outFile.is_open()) {
+                        outFile.write(reinterpret_cast<const char*>(response.content.data()), response.content.size());
+                        outFile.close();
+                        filesystem_error_msg = "Download completed: " + response.filename;
+                    } else {
+                        filesystem_error_msg = "Failed to save file: " + response.filename;
+                    }
+                    show_filesystem_error = true;
+                    std::cout << "Client received file download response for " << response.filename << " with " << response.content.size() << " bytes" << std::endl;
                 }
                 break;
             case MessageType::ERR:
@@ -647,11 +716,19 @@ int main() {
                     
                     // Context menu
                     if (ImGui::BeginPopupContextItem()) {
-                        if (ImGui::MenuItem("Open")) {
-                            if (file.isDirectory) {
-                                std::filesystem::path newPath = std::filesystem::path(current_path) / file.name;
+                        if (ImGui::MenuItem("Open", NULL, false, !file.isDirectory && isTextFile(file.name))) {
+                            if (!file.isDirectory && isTextFile(file.name)) {
+                                std::filesystem::path filePath = std::filesystem::path(current_path) / file.name;
                                 NetworkMessage request;
-                                request.fromFilesystemRequest(newPath.string());
+                                request.fromFileContentRequest(filePath.string());
+                                network_manager.sendMessage(request);
+                            }
+                        }
+                        if (ImGui::MenuItem("Download", NULL, false, !file.isDirectory)) {
+                            if (!file.isDirectory) {
+                                std::filesystem::path filePath = std::filesystem::path(current_path) / file.name;
+                                NetworkMessage request;
+                                request.fromFileDownloadRequest(filePath.string());
                                 network_manager.sendMessage(request);
                             }
                         }
@@ -686,6 +763,13 @@ int main() {
                 ImGui::EndPopup();
             }
             
+            ImGui::End();
+        }
+
+        // File Viewer Panel
+        if (show_file_viewer) {
+            ImGui::Begin(file_viewer_title.c_str(), &show_file_viewer);
+            ImGui::TextWrapped("%s", file_viewer_content.c_str());
             ImGui::End();
         }
 

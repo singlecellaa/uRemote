@@ -53,6 +53,10 @@ enum class MessageType {
     BINARY,
     FILESYSTEM_REQUEST,
     FILESYSTEM_RESPONSE,
+    FILE_CONTENT_REQUEST,
+    FILE_CONTENT_RESPONSE,
+    FILE_DOWNLOAD_REQUEST,
+    FILE_DOWNLOAD_RESPONSE,
     ERR
 };
 
@@ -84,6 +88,41 @@ struct NetworkMessage {
     }
     std::string toFilesystemRequest() const {
         return std::string(data.begin(), data.end());
+    }
+    void fromFileContentRequest(const std::string& path) {
+        type = MessageType::FILE_CONTENT_REQUEST;
+        data.assign(path.begin(), path.end());
+    }
+    std::string toFileContentRequest() const {
+        return std::string(data.begin(), data.end());
+    }
+    void fromFileDownloadRequest(const std::string& path) {
+        type = MessageType::FILE_DOWNLOAD_REQUEST;
+        data.assign(path.begin(), path.end());
+    }
+    std::string toFileDownloadRequest() const {
+        return std::string(data.begin(), data.end());
+    }
+    void fromFileContentResponse(const FileResponse& response) {
+        type = MessageType::FILE_CONTENT_RESPONSE;
+        data = json::to_bson(response.toJson());
+    }
+    FileResponse toFileContentResponse() const {
+        return FileResponse::fromJson(json::from_bson(data));
+    }
+    void fromFileDownloadResponse(const FileResponse& response) {
+        type = MessageType::FILE_DOWNLOAD_RESPONSE;
+        data = json::to_bson(response.toJson());
+    }
+    FileResponse toFileDownloadResponse() const {
+        return FileResponse::fromJson(json::from_bson(data));
+    }
+    void fromBinary(const std::vector<uint8_t>& binaryData) {
+        type = MessageType::BINARY;
+        data = binaryData;
+    }
+    std::vector<uint8_t> toBinary() const {
+        return data;
     }
     void fromError(const std::string& errorMsg) {
         type = MessageType::ERR;

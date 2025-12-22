@@ -144,6 +144,12 @@ enum class SignalType {
 	NONE
 };
 
+enum class SettingType {
+	PORT,
+	DOWNLOAD_PATH,
+	PASSWORD
+};
+
 static inline void check_ip(const char* ip_addr, char* conn_err) {
 	// Validate IPv4 format
 	int octets[4];

@@ -10,17 +10,31 @@ int main() {
     json config;
     std::string local_ip = getLocalConnectedIP();
     std::string port;
+    std::string download_path;
+    std::string password;
 
     std::ifstream file(CONFIG);
     if (file.is_open()) {
         config = json::parse(file);
-        port = config.value("port", "9090");
-        json recent_conn_json = config.value("recent_conn", json());
+        port = config.value("port", "");
+        download_path = config.value("download_path", "");
+        password = config.value("password", "");
+        json recent_conn_json = config.value("recent_conn", json::array());
         recent_conn.fromJson(recent_conn_json);
         file.close();
+        if (port.empty() || download_path.empty() || password.empty()) {
+            if (port.empty()) config["port"] = port =  "9090";
+            if (download_path.empty()) config["download_path"] = download_path = "C:\\uRemote";
+            if (password.empty()) config["password"] = password = "123456";
+            std::ofstream file(CONFIG);
+            file << config.dump(4);
+            file.close();
+        }
     }
     else {
         config["port"] = port = "9090";
+        config["download_path"] = download_path = "C:\\uRemote";
+        config["password"] = password = "123456";
         config["recent_conn"] = json::array();
         std::ofstream file(CONFIG);
         file << config.dump(4);
@@ -70,6 +84,10 @@ int main() {
     bool auto_scroll = true;
 
     bool show_settings = false;
+    SettingType current_setting = SettingType::PORT;
+
+    char download_path_input[512] = "";
+    char password_input[128] = "";
 
     bool show_recent_conn = false;
 
@@ -219,6 +237,15 @@ int main() {
                 }
                 if (ImGui::BeginMenu("Settings")) {
                     if (ImGui::MenuItem("Port")) {
+                        current_setting = SettingType::PORT;
+                        show_settings = true;
+                    }
+                    if (ImGui::MenuItem("Download Path")) {
+                        current_setting = SettingType::DOWNLOAD_PATH;
+                        show_settings = true;
+                    }
+                    if (ImGui::MenuItem("Password")) {
+                        current_setting = SettingType::PASSWORD;
                         show_settings = true;
                     }
                     ImGui::EndMenu();
@@ -382,34 +409,67 @@ int main() {
 
         if (show_settings) {
             ImGui::Begin("Settings", &show_settings, ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::Text(("Current Using Port: " + port).c_str());
-            ImGui::InputTextWithHint("Port", port.c_str(), port_input, IM_ARRAYSIZE(port_input), ImGuiInputTextFlags_CharsDecimal);
+            switch (current_setting) {
+            case SettingType::PORT: {
+                ImGui::Text(("Current Using Port: " + port).c_str());
+                ImGui::InputTextWithHint("Port", port.c_str(), port_input, IM_ARRAYSIZE(port_input), ImGuiInputTextFlags_CharsDecimal);
 
-            if (ImGui::BeginPopup("PortError")) {
-                ImGui::Text("%s", error_text);
-                if (ImGui::Button("Close")) {
-                    port_input[0] = '\0';
-                    error_text[0] = '\0';
-                    ImGui::CloseCurrentPopup();
+                if (ImGui::BeginPopup("PortError")) {
+                    ImGui::Text("%s", error_text);
+                    if (ImGui::Button("Close")) {
+                        port_input[0] = '\0';
+                        error_text[0] = '\0';
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
                 }
-                ImGui::EndPopup();
+                if (ImGui::Button("Apply")) {
+                    check_port(port_input, error_text);
+                    if (strlen(error_text)) {
+                        ImGui::OpenPopup("PortError");
+                    }
+                    else {
+                        port = port_input;
+                        config["port"] = port;
+                        std::ofstream file(CONFIG);
+                        file << config.dump(4);
+                        file.close();
+                    }
+                }
+                break;
             }
-            if (ImGui::Button("Apply")) {
-                check_port(port_input, error_text);
-                if (strlen(error_text)) {
-                    ImGui::OpenPopup("PortError");
-                }
-                else {
-                    port = port_input;
-                    config["port"] = port;
+            case SettingType::DOWNLOAD_PATH: {
+                ImGui::Text(("Current Download Path: " + (download_path.empty() ? "Not set" : download_path)).c_str());
+                ImGui::InputTextWithHint("Download Path", "Enter path...", download_path_input, IM_ARRAYSIZE(download_path_input));
+
+                if (ImGui::Button("Apply")) {
+                    download_path = download_path_input;
+                    config["download_path"] = download_path;
                     std::ofstream file(CONFIG);
                     file << config.dump(4);
                     file.close();
                 }
+                break;
+            }
+            case SettingType::PASSWORD: {
+                ImGui::Text(("Current Password: " + (password.empty() ? "Not set" : password)).c_str());
+                ImGui::InputTextWithHint("Password", "Enter password...", password_input, IM_ARRAYSIZE(password_input));
+
+                if (ImGui::Button("Apply")) {
+                    password = password_input;
+                    config["password"] = password;
+                    std::ofstream file(CONFIG);
+                    file << config.dump(4);
+                    file.close();
+                }
+                break;
+            }
             }
             ImGui::SameLine(0, 10.0f);
             if (ImGui::Button("Close")) {
                 port_input[0] = '\0';
+                download_path_input[0] = '\0';
+                password_input[0] = '\0';
                 error_text[0] = '\0';
                 show_settings = false;
             }

@@ -219,7 +219,7 @@ static inline void check_conn_input(ConnInputForm* input_form, char* conn_err) {
 	}
 }
 
-static DirectoryListing getDirectoryListing(const std::string& path) {
+static std::pair<bool, DirectoryListing> getDirectoryListing(const std::string& path) {
     DirectoryListing listing;
     listing.path = path;
     
@@ -233,8 +233,11 @@ static DirectoryListing getDirectoryListing(const std::string& path) {
         }
         
         // Check if directory exists
-        if (!std::filesystem::exists(dirPath) || !std::filesystem::is_directory(dirPath)) {
-            return listing; // Return empty listing
+        if (!std::filesystem::exists(dirPath)) {
+            return {false, listing}; // Path does not exist
+        }
+        if (!std::filesystem::is_directory(dirPath)) {
+            return {false, listing}; // Not a directory
         }
         
         for (const auto& entry : std::filesystem::directory_iterator(dirPath)) {
@@ -277,7 +280,8 @@ static DirectoryListing getDirectoryListing(const std::string& path) {
     } catch (const std::exception& e) {
         // Return empty listing on error
         std::cerr << "Error listing directory: " << e.what() << std::endl;
+        return {false, listing};
     }
     
-    return listing;
+    return {true, listing};
 }

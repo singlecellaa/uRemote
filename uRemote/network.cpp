@@ -76,6 +76,9 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
     } else if (message.type == MessageType::FILESYSTEM_RESPONSE) {
         pushNetworkMessage(message);
 		std::cout << "pushed filesystem response message" << std::endl;
+    } else if (message.type == MessageType::ERR) {
+        pushNetworkMessage(message);
+		std::cout << "pushed error message: " << message.toError() << std::endl;
     }
 }
 

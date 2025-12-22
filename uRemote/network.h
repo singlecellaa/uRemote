@@ -52,7 +52,8 @@ enum class MessageType {
     SIGNAL,
     BINARY,
     FILESYSTEM_REQUEST,
-    FILESYSTEM_RESPONSE
+    FILESYSTEM_RESPONSE,
+    ERR
 };
 
 // Message structure
@@ -82,6 +83,13 @@ struct NetworkMessage {
         data.assign(path.begin(), path.end());
     }
     std::string toFilesystemRequest() const {
+        return std::string(data.begin(), data.end());
+    }
+    void fromError(const std::string& errorMsg) {
+        type = MessageType::ERR;
+        data.assign(errorMsg.begin(), errorMsg.end());
+    }
+    std::string toError() const {
         return std::string(data.begin(), data.end());
     }
     std::vector<uint8_t> serialize() const {

@@ -86,6 +86,9 @@ int main() {
     bool show_file_explorer = true;
     std::string current_path = "";
     DirectoryListing current_directory;
+    char path_input[512] = "";
+    bool show_filesystem_error = false;
+    std::string filesystem_error_msg;
 
     while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
@@ -170,9 +173,13 @@ int main() {
                     if (requestedPath.empty()) 
                         requestedPath = std::getenv("USERPROFILE");
                     std::cout << "Server received filesystem request for path: " << requestedPath << std::endl;
-                    DirectoryListing listing = getDirectoryListing(requestedPath);
+                    auto [success, listing] = getDirectoryListing(requestedPath);
                     NetworkMessage response;
-                    response.fromDirectoryListing(listing);
+                    if (success) {
+                        response.fromDirectoryListing(listing);
+                    } else {
+                        response.fromError("Path not found: " + requestedPath);
+                    }
                     network_manager.sendMessage(response);
                 }
                 break;
@@ -180,7 +187,15 @@ int main() {
                 if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
                     current_directory = msg.toDirectoryListing();
                     current_path = current_directory.path;
+                    path_input[0] = '\0'; // Clear the input field
                     std::cout << "Client received filesystem response for path: " << current_path << " with " << current_directory.files.size() << " items" << std::endl;
+                }
+                break;
+            case MessageType::ERR:
+                if (mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
+                    filesystem_error_msg = msg.toError();
+                    show_filesystem_error = true;
+                    std::cout << "Client received error: " << filesystem_error_msg << std::endl;
                 }
                 break;
             default:
@@ -511,7 +526,13 @@ int main() {
             ImGui::Begin("File Explorer", &show_file_explorer);
             
             // Current path display and navigation
-            ImGui::Text("Current Path: %s", current_path.c_str());
+            if (ImGui::InputTextWithHint("##path", current_path.c_str(), path_input, IM_ARRAYSIZE(path_input), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                NetworkMessage request;
+                request.fromFilesystemRequest(path_input);
+                network_manager.sendMessage(request);
+                // Clear the input after sending
+                path_input[0] = '\0';
+            }
             ImGui::Separator();
             
             // Navigation buttons
@@ -591,6 +612,19 @@ int main() {
                 }
             }
             ImGui::EndChild();
+            
+            // Error popup
+            if (show_filesystem_error) {
+                ImGui::OpenPopup("FilesystemError");
+                show_filesystem_error = false; // Reset flag
+            }
+            if (ImGui::BeginPopup("FilesystemError")) {
+                ImGui::Text("%s", filesystem_error_msg.c_str());
+                if (ImGui::Button("Close")) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
             
             ImGui::End();
         }

@@ -22,6 +22,24 @@ struct ConnInputForm
 	char conn_name[16];
 	char host_machine[16];
 	char port[6];
+	char password[128];
+};
+
+enum class SignalType {
+	CONNECTED,
+	DISCONNECTED,
+	CMD_BUSY,
+	CMD_IDLE,
+	FILESYSTEM_REQUEST,
+	FILESYSTEM_RESPONSE,
+    AUTHENTICATION_FAILED,
+	NONE
+};
+
+enum class SettingType {
+	PORT,
+	DOWNLOAD_PATH,
+	PASSWORD
 };
 
 struct FileInfo {
@@ -161,6 +179,7 @@ public:
 			snprintf(record.conn_name, sizeof(record.conn_name), it->value("conn_name", "").c_str());
 			snprintf(record.host_machine, sizeof(record.host_machine), it->value("host_machine", "").c_str());
 			snprintf(record.port, sizeof(record.port), it->value("port", "").c_str());
+			snprintf(record.password, sizeof(record.password), it->value("password", "").c_str());
 			push(record);
 		}
 	}
@@ -171,26 +190,11 @@ public:
 			recordJson["conn_name"] = record.conn_name;
 			recordJson["host_machine"] = record.host_machine;
 			recordJson["port"] = record.port;
+			recordJson["password"] = record.password;
 			j.push_back(recordJson);
 		}
 		return j;
 	}
-};
-
-enum class SignalType {
-	CONNECTED,
-	DISCONNECTED,
-	CMD_BUSY,
-	CMD_IDLE,
-	FILESYSTEM_REQUEST,
-	FILESYSTEM_RESPONSE,
-	NONE
-};
-
-enum class SettingType {
-	PORT,
-	DOWNLOAD_PATH,
-	PASSWORD
 };
 
 static inline void check_ip(const char* ip_addr, char* conn_err) {
@@ -256,6 +260,8 @@ static inline void check_port(char* port, char* err) {
 static inline void check_conn_input(ConnInputForm* input_form, char* conn_err) {
 	if (strlen(input_form->conn_name) == 0) {
 		strcpy(conn_err, "Please Input Connection Name");
+	} else if (strlen(input_form->password) == 0) {
+		strcpy(conn_err, "Please Input Password");
 	} else {
 		if (strlen(input_form->host_machine) == 0) {
 			strcpy(input_form->host_machine, "localhost");

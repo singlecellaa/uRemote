@@ -73,9 +73,10 @@ int main() {
 
     bool show_server_panel = true;
     bool show_connection_panel = true;
-    ConnInputForm conn_input("", "", "");
+    ConnInputForm conn_input("", "", "", "");
     char port_input[6] = "";
     char error_text[128] = "";
+	bool authentication_failed = false;
 
     bool running = false;
     std::vector<std::string> server_output_vec;
@@ -123,7 +124,7 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         state = network_manager.getConnectionState();
-        running = state == ConnectionState::CONNECTING || state == ConnectionState::CONNECTED;
+        running = state == ConnectionState::CONNECTING || state == ConnectionState::AUTHENTICATING || state == ConnectionState::CONNECTED;
         state_text = network_manager.getConnectionInfo();
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -134,6 +135,11 @@ int main() {
         auto network_signals = network_manager.popSignals();
         for (const auto& signal : network_signals) {
             switch (signal) {
+            case SignalType::AUTHENTICATION_FAILED:
+                Sleep(1000);
+				network_manager.stopAll();
+				authentication_failed = true;
+                break;
             case SignalType::CONNECTED: {
                 recent_conn.push(conn_input);
                 config["recent_conn"] = recent_conn.toJson();
@@ -365,6 +371,9 @@ int main() {
                 case ConnectionState::CONNECTING:
                     color = ImVec4(0.0f, 0.0f, 1.0f, 1.0f); // Blue
                     break;
+                case ConnectionState::AUTHENTICATING:
+                    color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f); // Yellow
+                    break;
                 case ConnectionState::ERR:
                     color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f); // Red
                     break;
@@ -386,8 +395,8 @@ int main() {
             if (show_server_panel && !running) {
                 if (ImGui::Button("Start Server")) {
                     mode = Mode::SERVER;
-                    conn_input = { "","","" };
-                    network_manager.startServer(port);
+                    conn_input = { "","","","" };
+                    network_manager.startServer(port, password);
                     if (!cmd.isRunning()) {
                         cmd.start();
                     }
@@ -423,11 +432,11 @@ int main() {
                 ImGui::InputTextWithHint("Connection Name", "<connection name>", conn_input.conn_name, IM_ARRAYSIZE(conn_input.conn_name));
                 ImGui::InputTextWithHint("Host Machine", "<localhost>", conn_input.host_machine, IM_ARRAYSIZE(conn_input.host_machine));
                 ImGui::InputTextWithHint("Port", port.c_str(), conn_input.port, IM_ARRAYSIZE(conn_input.port), ImGuiInputTextFlags_CharsDecimal);
+                ImGui::InputTextWithHint("Password", "<password>", conn_input.password, IM_ARRAYSIZE(conn_input.password));
 
                 if (ImGui::BeginPopup("ConnctionInputError")) {
                     ImGui::Text("%s", error_text);
                     if (ImGui::Button("Close")) {
-                        conn_input = { "","","" };
                         error_text[0] = '\0';
                         ImGui::CloseCurrentPopup();
                     }
@@ -441,12 +450,19 @@ int main() {
                     }
                     else {
                         mode = Mode::CLIENT;
-                        network_manager.startClient(conn_input.host_machine, port);
+                        network_manager.startClient(conn_input.host_machine, conn_input.port, conn_input.password);
                     }
                 }
+                if (authentication_failed) {
+                    strcpy(error_text, "Authentication failed. Please check your password.");
+					ImGui::OpenPopup("ConnctionInputError");
+					authentication_failed = false;
+                }
+
+
                 ImGui::SameLine(0, 10.0f);
                 if (ImGui::Button("Cancel")) {
-                    conn_input = { "","" };
+                    conn_input = { "","","","" };
                 }
             }
 
@@ -607,7 +623,7 @@ int main() {
 
                 if (clicked) {
                     conn_input = record;
-                    network_manager.startClient(record.host_machine, record.port);
+                    network_manager.startClient(record.host_machine, record.port, record.password);
 					mode = Mode::CLIENT;
                     show_recent_conn = false;
                 }
@@ -804,7 +820,7 @@ int main() {
             ImGui::End();
         }
 
-        if (show_remote_desktop && mode == Mode::CLIENT) {
+        if (show_remote_desktop && mode == Mode::CLIENT && state == ConnectionState::CONNECTED) {
             ImGui::Begin("Remote Desktop", &show_remote_desktop);
             if (ImGui::Button("Request Screenshot")) {
                 NetworkMessage request;

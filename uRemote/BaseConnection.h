@@ -42,10 +42,10 @@ public:
 
     // State management
     ConnectionState getState() const;
+    void setState(ConnectionState new_state, const std::string& info = "");
     bool isConnected() const;
 
 protected:
-    void setState(ConnectionState new_state, const std::string& info = "");
     void startReading();
     void handleRead(const boost::system::error_code& error, size_t bytes_transferred);
     void handleWrite(const boost::system::error_code& error, size_t bytes_transferred);

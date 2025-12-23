@@ -6,8 +6,9 @@ NetworkManager::~NetworkManager() {
     stopAll();
 }
 
-void NetworkManager::startServer(const std::string& port) {
+void NetworkManager::startServer(const std::string& port, const std::string& password) {
     stopAll();
+    m_server_password = password;
 
     m_server_io_context = std::make_unique<boost::asio::io_context>();
     m_server = std::make_shared<Server>(*m_server_io_context, port);
@@ -32,11 +33,12 @@ void NetworkManager::startServer(const std::string& port) {
     updateConnectionInfo("Server started on port " + port);
 }
 
-void NetworkManager::startClient(const std::string& host, const std::string& port) {
+void NetworkManager::startClient(const std::string& host, const std::string& port, const std::string& password) {
     stopAll();
+    m_client_password = password;
 
     m_client_io_context = std::make_unique<boost::asio::io_context>();
-    m_client = std::make_shared<Client>(*m_client_io_context, host, port);
+    m_client = std::make_shared<Client>(*m_client_io_context, host, port, password);
 
     m_client->setConnectionCallback([this](ConnectionState state, const std::string& info) { 
         if (state == ConnectionState::CONNECTED || state == ConnectionState::DISCONNECTED) {
@@ -97,6 +99,28 @@ void NetworkManager::handleMessage(const std::string& type, const NetworkMessage
     } else if (message.type == MessageType::SCREENSHOT_RESPONSE) {
         pushNetworkMessage(message);
         std::cout << "pushed screenshot response message" << std::endl;
+    } else if (message.type == MessageType::AUTH_REQUEST) {
+		std::cout << "received auth request message" << std::endl;
+        if (type == "Server") {
+            std::string client_password = message.toAuthRequest();
+            bool auth_success = (client_password == m_server_password);
+            NetworkMessage response;
+            response.fromAuthResponse(auth_success);
+            sendMessage(response);
+            if (auth_success) {
+                m_server->setState(ConnectionState::CONNECTED, "Client authenticated");
+            } 
+        }
+    } else if (message.type == MessageType::AUTH_RESPONSE) {
+		std::cout << "received auth response message" << std::endl;
+        if (type == "Client") {
+            bool auth_success = message.toAuthResponse();
+            if (auth_success) {
+                m_client->setState(ConnectionState::CONNECTED, "Authenticated");
+            } else {
+				pushSignal(SignalType::AUTHENTICATION_FAILED);
+            }
+        }
     }
 }
 

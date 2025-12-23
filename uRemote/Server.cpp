@@ -54,7 +54,7 @@ void Server::startAccept() {
 
 void Server::handleAccept(const boost::system::error_code& error) {
     if (!error) {
-        setState(ConnectionState::CONNECTED, "Client connected");
+        setState(ConnectionState::AUTHENTICATING, "Client authenticating...");
         onConnected();
         startReading();
     }

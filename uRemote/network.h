@@ -32,6 +32,7 @@ class Client;
 enum class ConnectionState {
     DISCONNECTED,
     CONNECTING,
+    AUTHENTICATING,
     CONNECTED,
     DISCONNECTING,
     ERR
@@ -57,6 +58,8 @@ enum class MessageType {
     FILE_DOWNLOAD_RESPONSE,
     SCREENSHOT_REQUEST,
     SCREENSHOT_RESPONSE,
+    AUTH_REQUEST,
+    AUTH_RESPONSE,
     ERR
 };
 
@@ -128,6 +131,21 @@ struct NetworkMessage {
     ScreenshotResponse toScreenshotResponse() const {
         return ScreenshotResponse::fromJson(json::from_bson(data));
     }
+    void fromAuthRequest(const std::string& password) {
+        type = MessageType::AUTH_REQUEST;
+        data.assign(password.begin(), password.end());
+    }
+    std::string toAuthRequest() const {
+        return std::string(data.begin(), data.end());
+    }
+    void fromAuthResponse(bool success) {
+        type = MessageType::AUTH_RESPONSE;
+        data.clear();
+        data.push_back(success ? 1 : 0);
+    }
+    bool toAuthResponse() const {
+        return !data.empty() && data[0] == 1;
+    }
     void fromBinary(const std::vector<uint8_t>& binaryData) {
         type = MessageType::BINARY;
         data = binaryData;
@@ -189,15 +207,17 @@ private:
     std::atomic<ConnectionState> m_connection_state{ ConnectionState::DISCONNECTED };
     std::string m_connection_info;
     mutable std::mutex m_info_mutex;
+    std::string m_client_password;
+    std::string m_server_password;
 
 public:
     NetworkManager() = default;
 
     ~NetworkManager();
 
-    void startServer(const std::string& port);
+    void startServer(const std::string& port, const std::string& password);
 
-    void startClient(const std::string& host, const std::string& port);
+    void startClient(const std::string& host, const std::string& port, const std::string& password);
 
     void stopAll();
 

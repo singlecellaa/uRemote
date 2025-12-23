@@ -127,7 +127,8 @@ ConnectionState BaseConnection::getState() const {
 }
 
 bool BaseConnection::isConnected() const {
-    return getState() == ConnectionState::CONNECTED;
+    ConnectionState state = getState();
+    return state == ConnectionState::AUTHENTICATING || state == ConnectionState::CONNECTED;
 }
 
 void BaseConnection::setState(ConnectionState new_state, const std::string& info) {

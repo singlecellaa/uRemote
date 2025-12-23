@@ -1,7 +1,7 @@
 #include "Client.h"
 
-Client::Client(boost::asio::io_context& io_context, const std::string& host, const std::string& port)
-    : BaseConnection(io_context), m_host(host), m_port(port), m_resolver(io_context) {
+Client::Client(boost::asio::io_context& io_context, const std::string& host, const std::string& port, const std::string& password)
+    : BaseConnection(io_context), m_host(host), m_port(port), m_password(password), m_resolver(io_context) {
 }
 
 Client::~Client() {
@@ -54,7 +54,7 @@ void Client::handleResolve(const boost::system::error_code& error, tcp::resolver
 
 void Client::handleConnect(const boost::system::error_code& error) {
     if (!error) {
-        setState(ConnectionState::CONNECTED, "Connected to server");
+        setState(ConnectionState::AUTHENTICATING, "Authenticating...");
         onConnected();
         startReading();
     }
@@ -66,6 +66,11 @@ void Client::handleConnect(const boost::system::error_code& error) {
 
 void Client::onConnected() {
     std::cout << "Client: Connected to server" << std::endl;
+    // Send authentication request
+    NetworkMessage auth_msg;
+    auth_msg.fromAuthRequest(m_password);
+    send(auth_msg);
+	std::cout << "Client: Sent authentication request" << std::endl;
 }
 
 void Client::onDisconnected() {
